@@ -197,14 +197,14 @@ def create_box(box_json, observation_uuid: str, retry=True):
     :param retry: Retry after authentication failure
     :return: HTTP response JSON if success, else None
     """
-    token = check_auth()
-
     request_data = {
         'observation_uuid': observation_uuid,
         'link_name': 'bounding box',
         'link_value': json.dumps(box_json),
         'mime_type': 'application/json'
     }
+
+    token = check_auth()
 
     try:
         response = requests.post(

@@ -27,6 +27,12 @@ class EntryTreeItem(QTreeWidgetItem):
     def __init__(self, parent):
         super(EntryTreeItem, self).__init__(parent)
 
+    def update(self):
+        for header, datum in self.metadata.items():
+            if header in self.treeWidget().header_map.keys():
+                col = self.treeWidget().header_map[header]
+                self.setText(col, str(datum))
+
 
 class EntryTree(QTreeWidget):
 
@@ -38,7 +44,7 @@ class EntryTree(QTreeWidget):
         self.setHeaderLabels(headers)
         self.header_map = dict([tup[::-1] for tup in enumerate(headers)])  # header -> column lookup
 
-    def add_item(self, data: dict, parent=None):
+    def add_item(self, data, parent=None):
         """
         Create an entry tree item from dictionary of data, add to tree, and return item
         :param data: dict of data attributes
@@ -49,10 +55,7 @@ class EntryTree(QTreeWidget):
         item.metadata = data
 
         if data:
-            for header, datum in data.items():
-                if header in self.header_map.keys():
-                    col = self.header_map[header]
-                    item.setText(col, str(datum))
+            item.update()
         else:
             item.setText(0, 'No results found.')
 
@@ -66,7 +69,8 @@ class ImagedMomentTree(EntryTree):
             (
                 'uuid',
                 'concept',
-                'observer'
+                'observer',
+                'status'
             ),
             parent)
 
@@ -97,7 +101,8 @@ class ImagedMomentTree(EntryTree):
 
         results = [{
             'uuid': uuid,
-            'type': 'imaged_moment'
+            'type': 'imaged_moment',
+            'status': 'unknown'
         } for uuid in self.loaded_uuids[offset:offset+limit]]
 
         self.clear()
@@ -105,6 +110,54 @@ class ImagedMomentTree(EntryTree):
             self.add_item(None, self)
         for result in results:
             item = self.add_item(result)
+            self.load_imaged_moment_entry(item)  # Fetch imaged moment observation/metadata
+
+    def load_imaged_moment_entry(self, entry: EntryTreeItem):
+        """
+        Load imaged moment entry data into tree.
+        :param entry: Imaged moment entry item
+        :return: None
+        """
+        meta = entry.metadata
+        imaged_moment = get_imaged_moment(meta['uuid'])
+
+        # Get indices
+        meta['video_reference_uuid'] = imaged_moment['video_reference_uuid']
+        fields = imaged_moment.keys()
+        if 'timecode' in fields:
+            meta['timecode'] = imaged_moment['timecode']
+        if 'elapsed_time' in fields:
+            meta['elapsed_time'] = imaged_moment['elapsed_time']
+        if 'recorded_date' in fields:
+            meta['recorded_date'] = imaged_moment['recorded_date']
+
+        for image_reference in imaged_moment['image_references']:
+            if image_reference['format'] == 'image/png':
+                meta['image_reference_uuid'] = image_reference['uuid']
+                meta['url'] = image_reference['url']
+                break
+
+        observations = imaged_moment['observations']
+        localized = 0
+        for observation in observations:
+            observation_metadata = {
+                'concept': observation['concept'],
+                'uuid': observation['uuid'],
+                'observer': observation['observer'],
+                'boxes': list(extract_bounding_boxes(
+                    observation['associations'],
+                    observation['concept'],
+                    observation['uuid']
+                )),
+                'type': 'observation'
+            }
+            if observation_metadata['boxes']:  # This observation has been localized
+                localized += 1
+            observation_metadata['status'] = len(observation_metadata['boxes'])
+            self.add_item(observation_metadata, parent=entry)
+
+        entry.metadata['status'] = '{}/{}'.format(localized, len(observations))
+        entry.update()
 
     def item_changed(self, current: EntryTreeItem, previous: EntryTreeItem):
         """
@@ -113,39 +166,7 @@ class ImagedMomentTree(EntryTree):
         :param previous: Previous item
         :return: None
         """
-        meta = current.metadata
-        if not current or not meta:
+        if not current or not current.metadata:
             return
-        if meta['type'] == 'imaged_moment' and not current.childCount():
-            imaged_moment = get_imaged_moment(meta['uuid'])
-
-            # Get indices
-            meta['video_reference_uuid'] = imaged_moment['video_reference_uuid']
-            fields = imaged_moment.keys()
-            if 'timecode' in fields:
-                meta['timecode'] = imaged_moment['timecode']
-            if 'elapsed_time' in fields:
-                meta['elapsed_time'] = imaged_moment['elapsed_time']
-            if 'recorded_date' in fields:
-                meta['recorded_date'] = imaged_moment['recorded_date']
-
-            for image_reference in imaged_moment['image_references']:
-                if image_reference['format'] == 'image/png':
-                    meta['image_reference_uuid'] = image_reference['uuid']
-                    meta['url'] = image_reference['url']
-                    break
-
-            observations = imaged_moment['observations']
-            for observation in observations:
-                observation_metadata = {
-                    'concept': observation['concept'],
-                    'uuid': observation['uuid'],
-                    'observer': observation['observer'],
-                    'boxes': list(extract_bounding_boxes(
-                        observation['associations'],
-                        observation['concept'],
-                        observation['uuid']
-                    )),
-                    'type': 'observation'
-                }
-                self.add_item(observation_metadata, parent=current)
+        if current.metadata['type'] == 'imaged_moment' and not current.childCount():
+            self.load_imaged_moment(current)

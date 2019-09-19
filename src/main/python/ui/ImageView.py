@@ -249,6 +249,7 @@ class ImageView(QGraphicsView):
         box_json_after = box.source.get_json()
         if box_json_after != box_json_before:
             box.source.observer = self.window().observer  # Update observer field
+            box.source.strength = utils.get_observer_confidence(box.source.observer)  # Update strength field
             modify_box(box_json_after, self.observation_uuid, box.source.association_uuid)
 
         self.pt_1 = None
@@ -404,11 +405,11 @@ class ImageView(QGraphicsView):
             uuid = observation['observation_uuid']
 
         box.observation_uuid = uuid
-        if not self.box_sources[uuid]:  # Ensure there isn't already a bounding box
-            self.draw_bounding_box(box, self.box_managers[uuid])
-            self.box_sources[uuid].append(box)
-            response_json = create_box(box.get_json(), uuid)
-            box.association_uuid = response_json['uuid']
+        self.draw_bounding_box(box, self.box_managers[uuid])
+        self.box_sources[uuid].append(box)
+        self
+        response_json = create_box(box.get_json(), uuid)
+        box.association_uuid = response_json['uuid']
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self.pixmap_src:
@@ -424,10 +425,12 @@ class ImageView(QGraphicsView):
                 }
 
                 concept = self.observation_concepts[self.observation_uuid] if self.observation_uuid else ''
+                observer = self.window().observer
                 new_src_box = SourceBoundingBox(
                     box_json,
                     concept,
-                    self.window().observer
+                    observer,
+                    utils.get_observer_confidence(observer)
                 )
                 if new_src_box.width() * new_src_box.height() > 100:
                     self.handle_new_box(new_src_box)

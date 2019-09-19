@@ -26,7 +26,7 @@ from util import utils
 class SourceBoundingBox(QRect):
     """ Bounding box VARS source data structure """
 
-    def __init__(self, box_json, label, observer, observation_uuid=None, association_uuid=None):
+    def __init__(self, box_json, label, observer, strength, observation_uuid=None, association_uuid=None):
         super(SourceBoundingBox, self).__init__(
             box_json['x'],
             box_json['y'],
@@ -38,6 +38,7 @@ class SourceBoundingBox(QRect):
         self.association_uuid = association_uuid
         self.label = label
         self.observer = observer
+        self.strength = strength
 
     def set_label(self, label):
         self.label = label
@@ -49,6 +50,7 @@ class SourceBoundingBox(QRect):
             'width': self.width(),
             'height': self.height(),
             'observer': self.observer,
+            'strength': self.strength,
             'image_reference_uuid': self.image_reference_uuid
         }
 

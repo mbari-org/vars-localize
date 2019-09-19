@@ -117,9 +117,26 @@ def extract_bounding_boxes(associations: list, concept: str, observation_uuid: s
         if association['link_name'] != 'bounding box':
             continue
 
+        box_json = json.loads(association['link_value'])
         yield SourceBoundingBox(  # Create source box
-            json.loads(association['link_value']),
+            box_json,
             concept,
+            box_json['observer'],
+            box_json['confidence'],
             observation_uuid=observation_uuid,
             association_uuid=association['uuid']
         )
+
+
+def get_observer_confidence(observer: str):
+    """
+    Get the confidence value given a particular observer.
+    :param observer: Observer to lookup
+    :return: Confidence value (any)
+    """
+    with open('config/strength_map.json') as f:
+        json_obj = json.load(f)
+        for conf_rank in json_obj.keys():
+            if conf_rank != 'default' and observer in json_obj[conf_rank]:
+                return conf_rank
+        return json_obj['default']

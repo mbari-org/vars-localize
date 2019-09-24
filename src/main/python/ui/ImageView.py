@@ -131,7 +131,9 @@ class ImageView(QGraphicsView):
         :return: None
         """
         self.moment = entry
-        self.set_pixmap(util.requests.fetch_image(entry.metadata['url']))  # Fetch & set pixmap
+        if 'cached_image' not in entry.metadata.keys():  # Cache pixmap
+            entry.metadata['cached_image'] = util.requests.fetch_image(entry.metadata['url'])
+        self.set_pixmap(entry.metadata['cached_image'])  # Set pixmap
         observation_entries = [entry.child(idx) for idx in range(entry.childCount())]
         self.observation_concepts = dict()
         self.box_managers = dict()

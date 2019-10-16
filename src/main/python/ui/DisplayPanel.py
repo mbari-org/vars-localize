@@ -1,6 +1,4 @@
 # DisplayPanel.py (vars-localize)
-from PyQt5.QtCore import Qt
-from ui.EntryTree import EntryTreeItem
 
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
@@ -16,13 +14,10 @@ Container widget used do display images + localizations and process input.
 @status: __status__
 @license: __license__
 '''
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QCheckBox
+from PyQt5.QtWidgets import QWidget, QVBoxLayout
 
-from ui.ConceptEntry import ConceptEntry
 from ui.ImageView import ImageView
-import util.utils
-import util.requests
-from ui.BoundingBox import SourceBoundingBox
+from ui.EntryTree import EntryTreeItem
 
 
 class DisplayPanel(QWidget):

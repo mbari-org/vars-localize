@@ -80,30 +80,6 @@ def concept_count(concept: str):
         return 0
 
 
-def imaged_moment_fetch(uuid: str, ignore_observation_uuid: str = None):
-    """
-    Fetch all bounding boxes for all observations from a particular imaged moment
-    :param uuid: Imaged moment uuid
-    :param ignore_observation_uuid: Optional observation uuid to ignore when adding boxes
-    :return: List of source bounding boxes
-    """
-    try:
-        response = requests.get(
-            util.utils.get_property('endpoints', 'imaged_moment') + '/{}'.format(uuid)
-        )
-        response_json = response.json()
-        observations = response_json['observations']
-        boxes = []
-        for observation in observations:
-            if not ignore_observation_uuid or observation['uuid'].lower() != ignore_observation_uuid.lower():
-                boxes.extend(util.utils.extract_bounding_boxes(observation['associations'], observation['concept']))
-        return boxes
-    except Exception as e:
-        print('Imaged moment search failed.')
-        print(e)
-        return None
-
-
 def auth():
     """
     Authenticate, generate new JWT access token and cache it

@@ -1,5 +1,5 @@
 # EntryTree.py (vars-localize)
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QBrush, QColor
 from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem
 from util.requests import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments
 from util.utils import extract_bounding_boxes
@@ -27,7 +27,25 @@ class EntryTreeItem(QTreeWidgetItem):
     def __init__(self, parent):
         super(EntryTreeItem, self).__init__(parent)
 
+    def set_background(self, header: str, background: QColor):
+        """
+        Set the background color of one or all columns
+        :param header: Title of the column, or 'all' for all
+        :param background: Background QColor
+        :return: None
+        """
+        if header == 'all':
+            for col in range(self.columnCount()):
+                self.setBackground(col, background)
+        if header in self.treeWidget().header_map.keys():
+            col = self.treeWidget().header_map[header]
+            self.setBackground(col, background)
+
     def update(self):
+        """
+        Update the text fields within the entry based metadata
+        :return: None
+        """
         for header, datum in self.metadata.items():
             if header in self.treeWidget().header_map.keys():
                 col = self.treeWidget().header_map[header]
@@ -60,6 +78,27 @@ class EntryTree(QTreeWidget):
             item.setText(0, 'No results found.')
 
         return item
+
+
+def update_imaged_moment_entry(entry: EntryTreeItem):
+    localized = 0
+    for obs_item in [entry.child(idx) for idx in range(entry.childCount())]:
+        if obs_item.metadata['boxes']:  # This observation has been localized
+            localized += 1
+        obs_item.metadata['status'] = len(obs_item.metadata['boxes'])
+        if not obs_item.metadata['status']:
+            obs_item.set_background('status', QColor('#ff9696'))
+        obs_item.update()
+
+    percent_localized = localized / len(entry.metadata['observations'])
+    if percent_localized < 0.25:
+        entry.set_background('status', QColor('#ff9696'))
+    elif percent_localized < 1:
+        entry.set_background('status', QColor('#ffc996'))
+    else:
+        entry.set_background('status', QColor('#b9ff96'))
+    entry.metadata['status'] = '{}/{}'.format(localized, len(entry.metadata['observations']))
+    entry.update()
 
 
 class ImagedMomentTree(EntryTree):
@@ -118,56 +157,37 @@ class ImagedMomentTree(EntryTree):
         :param entry: Imaged moment entry item
         :return: None
         """
+        entry.metadata = get_imaged_moment(entry.metadata['uuid'])  # Fetch original imaged moment data
         meta = entry.metadata
-        imaged_moment = get_imaged_moment(meta['uuid'])
+        meta['type'] = 'imaged_moment'
 
-        meta['video_reference_uuid'] = imaged_moment['video_reference_uuid']
-        # other_videos = get_other_videos(meta['video_reference_uuid'])
-        all_moments = get_windowed_moments(
+        all_moments = get_windowed_moments(  # Fetch all moments in window
             [meta['video_reference_uuid']], meta['uuid'],
             self.window().search_panel.time_window.value()
         )
+        for moment in all_moments:  # Add other observations to the imaged moment observations list
+            known_observation_uuids = [obs['uuid'] for obs in meta['observations']]
+            for obs in moment['observations']:
+                if obs['uuid'] not in known_observation_uuids:
+                    meta['observations'].append(obs)
 
-        # Get indices
-        fields = imaged_moment.keys()
-        if 'timecode' in fields:
-            meta['timecode'] = imaged_moment['timecode']
-        if 'elapsed_time' in fields:
-            meta['elapsed_time'] = imaged_moment['elapsed_time']
-        if 'recorded_date' in fields:
-            meta['recorded_date'] = imaged_moment['recorded_date']
-
-        for image_reference in imaged_moment['image_references']:
+        for image_reference in meta['image_references']:  # Pick the image reference & URL to use
             if image_reference['format'] == 'image/png':
                 meta['image_reference_uuid'] = image_reference['uuid']
                 meta['url'] = image_reference['url']
                 break
 
-        # observations = imaged_moment['observations']
-        observations = []
-        for moment in all_moments:
-            for obs in moment['observations']:
-                observations.append(obs)
-        localized = 0
-        for observation in observations:
-            observation_metadata = {
-                'concept': observation['concept'],
-                'uuid': observation['uuid'],
-                'observer': observation['observer'],
-                'boxes': list(extract_bounding_boxes(
-                    observation['associations'],
-                    observation['concept'],
-                    observation['uuid']
-                )),
-                'type': 'observation'
-            }
-            if observation_metadata['boxes']:  # This observation has been localized
-                localized += 1
-            observation_metadata['status'] = len(observation_metadata['boxes'])
-            self.add_item(observation_metadata, parent=entry)
+        for observation in meta['observations']:
+            obs_item = self.add_item(observation, parent=entry)
+            obs_item.metadata['type'] = 'observation'
+            obs_item.metadata['boxes'] = list(extract_bounding_boxes(
+                observation['associations'],
+                observation['concept'],
+                observation['uuid'],
+                im_ref_filter=meta['image_reference_uuid']
+            ))
 
-        entry.metadata['status'] = '{}/{}'.format(localized, len(observations))
-        entry.update()
+        update_imaged_moment_entry(entry)
 
     def item_changed(self, current: EntryTreeItem, previous: EntryTreeItem):
         """

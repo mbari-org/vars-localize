@@ -34,8 +34,8 @@ def n_split_hash(string: str, n: int, maxval: int = 255):
     :return: Tuple of int values
     """
     part_len = len(string) // n
-    parts = [string[i*part_len:(i+1)*part_len] for i in range(n-1)]
-    parts.append(string[(n-1)*part_len:])
+    parts = [string[i * part_len:(i + 1) * part_len] for i in range(n - 1)]
+    parts.append(string[(n - 1) * part_len:])
 
     return tuple([
         reduce(lambda a, b: a * b % maxval, [ord(letter) for letter in sorted(part.replace(' ', ''))]) % maxval
@@ -105,12 +105,13 @@ def encode_form(json_obj):
     return bytearray(urllib.parse.urlencode(json_obj).replace('%27', '%22'), 'utf-8')
 
 
-def extract_bounding_boxes(associations: list, concept: str, observation_uuid: str):
+def extract_bounding_boxes(associations: list, concept: str, observation_uuid: str, im_ref_filter: str = None):
     """
     Yield source bounding box objects from a JSON list of associations
     :param associations: JSON list of associations
     :param concept: Concept to attach to each source bounding box
     :param observation_uuid: Observation UUID to attach to box
+    :param im_ref_filter: Optional filter for bounding boxes tied to a particular image reference
     :return: Generator object for bounding boxes
     """
     for association in associations:  # Generate source bounding boxes
@@ -118,14 +119,15 @@ def extract_bounding_boxes(associations: list, concept: str, observation_uuid: s
             continue
 
         box_json = json.loads(association['link_value'])
-        yield SourceBoundingBox(  # Create source box
-            box_json,
-            concept,
-            box_json['observer'],
-            box_json['confidence'],
-            observation_uuid=observation_uuid,
-            association_uuid=association['uuid']
-        )
+        if im_ref_filter and box_json['image_reference_uuid'] == im_ref_filter:
+            yield SourceBoundingBox(  # Create source box
+                box_json,
+                concept,
+                box_json['observer'],
+                box_json['confidence'],
+                observation_uuid=observation_uuid,
+                association_uuid=association['uuid']
+            )
 
 
 def get_observer_confidence(observer: str):

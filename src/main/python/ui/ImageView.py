@@ -43,9 +43,7 @@ class ImageView(QGraphicsView):
 
         self.observation_uuid = None
         self.moment = None
-        self.observation_concepts = None
-        self.box_managers = None
-        self.box_sources = None
+        self.observation_map = None
         self.enabled_observations = None
 
         self.pixmap_src = None
@@ -72,12 +70,12 @@ class ImageView(QGraphicsView):
         if self.pixmap_src:  # Image loaded, draw image + relevant components
             self.draw_pixmap(self.pixmap_src)
 
-            if self.box_sources:
+            if self.enabled_observations:
                 for uuid, enabled in self.enabled_observations.items():
                     if not enabled:
                         continue
-                    for box in self.box_sources[uuid]:
-                        box_item = self.draw_bounding_box(box, self.box_managers[uuid])
+                    for box in self.observation_map[uuid].metadata['boxes']:
+                        box_item = self.draw_bounding_box(box, self.observation_map[uuid].metadata['box_manager'])
                         if self.selected_box == box:
                             box_item.set_highlighted(True)
 
@@ -104,8 +102,8 @@ class ImageView(QGraphicsView):
         :return: None
         """
         self.scene().clear()
-        if self.box_managers:
-            for box_manager in self.box_managers.values():
+        if self.observation_map:
+            for box_manager in [entry.metadata['box_manager'] for entry in self.observation_map.values()]:
                 box_manager.clear()
 
     def set_entry(self, entry: EntryTreeItem):
@@ -135,17 +133,12 @@ class ImageView(QGraphicsView):
             entry.metadata['cached_image'] = util.requests.fetch_image(entry.metadata['url'])
         self.set_pixmap(entry.metadata['cached_image'])  # Set pixmap
         observation_entries = [entry.child(idx) for idx in range(entry.childCount())]
-        self.observation_concepts = dict()
-        self.box_managers = dict()
-        self.box_sources = dict()
+        self.observation_map = dict([(entry.metadata['uuid'], entry) for entry in observation_entries])  # observation uuid -> entry tree item
         self.enabled_observations = dict()
         for observation_entry in observation_entries:
             uuid = observation_entry.metadata['uuid']
-            concept = observation_entry.metadata['concept']
-            self.observation_concepts[uuid] = concept
-            self.box_managers[uuid] = BoundingBoxManager()  # Construct new bounding box manager
-            self.box_managers[uuid].set_box_click_callback(self.show_box_properties_dialog)
-            self.box_sources[uuid] = observation_entry.metadata['boxes']
+            observation_entry.metadata['box_manager'] = BoundingBoxManager()  # Construct new bounding box manager
+            observation_entry.metadata['box_manager'].set_box_click_callback(self.show_box_properties_dialog)
             self.enabled_observations[uuid] = True
 
     def set_pixmap(self, pixmap):
@@ -252,7 +245,8 @@ class ImageView(QGraphicsView):
         if box_json_after != box_json_before:
             box.source.observer = self.window().observer  # Update observer field
             box.source.strength = utils.get_observer_confidence(box.source.observer)  # Update strength field
-            modify_box(box_json_after, self.observation_uuid, box.source.association_uuid)
+            modify_box(box_json_after, self.observation_uuid, box.source.association_uuid)  # Call modification request
+            self.window().search_panel.entry_tree.update_imaged_moment_entry(self.moment)  # Update tree
 
         self.pt_1 = None
         self.pt_2 = None
@@ -266,9 +260,11 @@ class ImageView(QGraphicsView):
         :param box: Source bounding box to delete
         :return: None
         """
-        if box in self.box_sources[box.observation_uuid]:  # Protect
-            self.box_sources[box.observation_uuid].remove(box)
-            delete_box(box.association_uuid)
+        source_boxes = self.observation_map[box.observation_uuid].metadata['boxes']
+        if box in self.observation_map[box.observation_uuid].metadata['boxes']:  # Protect
+            source_boxes.remove(box)
+            delete_box(box.association_uuid)  # Call deletion request
+            self.window().search_panel.entry_tree.update_imaged_moment_entry(self.moment)  # Update tree
 
     def calc_drag_rect(self):
         """
@@ -361,33 +357,14 @@ class ImageView(QGraphicsView):
         if 'recorded_date' in fields:
             kwargs['recorded_date'] = self.moment.metadata['recorded_date']
 
-        observation = create_observation(
+        observation = create_observation(  # Call observation creation request
             self.moment.metadata['video_reference_uuid'],
             concept,
             self.window().observer,
             **kwargs
         )
 
-        uuid = observation['observation_uuid']
-        observation_metadata = {
-            'concept': observation['concept'],
-            'uuid': uuid,
-            'observer': observation['observer'],
-            'boxes': list(extract_bounding_boxes(
-                observation['associations'],
-                observation['concept'],
-                uuid
-            )),
-            'type': 'observation'
-        }
-        self.window().search_panel.entry_tree.add_item(observation_metadata, self.moment)  # Register in tree
-
-        # Register in view records
-        self.observation_concepts[uuid] = concept
-        self.box_managers[uuid] = BoundingBoxManager()  # Construct new bounding box manager
-        self.box_managers[uuid].set_box_click_callback(self.show_box_properties_dialog)
-        self.box_sources[uuid] = observation_metadata['boxes']
-        self.enabled_observations[uuid] = True
+        self.window().search_panel.entry_tree.load_imaged_moment_entry(self.moment)  # Reload the tree
 
         return observation
 
@@ -407,11 +384,11 @@ class ImageView(QGraphicsView):
             uuid = observation['observation_uuid']
 
         box.observation_uuid = uuid
-        self.draw_bounding_box(box, self.box_managers[uuid])
-        self.box_sources[uuid].append(box)
-        self
+        self.draw_bounding_box(box, self.observation_map[uuid].metadata['box_manager'])
+        self.observation_map[uuid].metadata['boxes'].append(box)
         response_json = create_box(box.get_json(), uuid)
         box.association_uuid = response_json['uuid']
+        self.window().search_panel.entry_tree.update_imaged_moment_entry(self.moment)  # Update tree
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self.pixmap_src:
@@ -426,7 +403,7 @@ class ImageView(QGraphicsView):
                     'image_reference_uuid': self.moment.metadata['image_reference_uuid']
                 }
 
-                concept = self.observation_concepts[self.observation_uuid] if self.observation_uuid else ''
+                concept = self.observation_map[self.observation_uuid].metadata['concept'] if self.observation_uuid else ''
                 observer = self.window().observer
                 new_src_box = SourceBoundingBox(
                     box_json,
@@ -458,7 +435,7 @@ class ImageView(QGraphicsView):
             self.pt_2 = None
             for uuid, enabled in self.enabled_observations.items():
                 if enabled:
-                    self.box_managers[uuid].check_box_click(event.pos())
+                    self.observation_map[uuid].metadata['box_manager'].check_box_click(event.pos())
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         self.redraw()

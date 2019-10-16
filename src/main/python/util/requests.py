@@ -317,3 +317,41 @@ def get_all_users() -> list:
     for user_struct in response_json:
         usernames.append(user_struct['username'])
     return usernames
+
+
+def get_other_videos(video_reference_uuid: str) -> list:
+    """
+    Get a list of all video references concurrent to the provided video reference UUID
+    :param video_reference_uuid: Base video reference UUID
+    :return: List of all concurrent video reference UUIDs
+    """
+    response = requests.get(
+        util.utils.get_property('endpoints', 'concurrent_videos') + '/{}'.format(video_reference_uuid)
+    )
+    response_json = response.json()
+    return [ref['video_reference_uuid'] for ref in response_json]
+
+
+def get_windowed_moments(video_reference_uuids: list, imaged_moment_uuid: str, time_window: int):
+    """
+    Get a list of imaged moment data within specified time window in the given videos corresponding to a particular imaged moment.
+    :param video_reference_uuids: List of video reference UUIDs to fetch from
+    :param imaged_moment_uuid: Reference imaged moment UUID
+    :param time_window: Time window, in milliseconds
+    :return: List of imaged moment data
+    """
+    request_data = {
+        'video_reference_uuids': video_reference_uuids,
+        'imaged_moment_uuid': imaged_moment_uuid,
+        'window': time_window
+    }
+
+    response = requests.post(
+        util.utils.get_property('endpoints', 'window_request'),
+        data=json.dumps(request_data),
+        headers={
+            'Content-Type': 'application/json'
+        }
+    )
+    response_json = response.json()
+    return response_json

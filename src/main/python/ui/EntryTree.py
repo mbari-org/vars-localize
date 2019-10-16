@@ -1,7 +1,7 @@
 # EntryTree.py (vars-localize)
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem
-from util.requests import get_imaged_moment_uuids, get_imaged_moment
+from util.requests import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments
 from util.utils import extract_bounding_boxes
 
 __author__ = "Kevin Barnard"
@@ -121,8 +121,14 @@ class ImagedMomentTree(EntryTree):
         meta = entry.metadata
         imaged_moment = get_imaged_moment(meta['uuid'])
 
-        # Get indices
         meta['video_reference_uuid'] = imaged_moment['video_reference_uuid']
+        # other_videos = get_other_videos(meta['video_reference_uuid'])
+        all_moments = get_windowed_moments(
+            [meta['video_reference_uuid']], meta['uuid'],
+            self.window().search_panel.time_window.value()
+        )
+
+        # Get indices
         fields = imaged_moment.keys()
         if 'timecode' in fields:
             meta['timecode'] = imaged_moment['timecode']
@@ -137,7 +143,11 @@ class ImagedMomentTree(EntryTree):
                 meta['url'] = image_reference['url']
                 break
 
-        observations = imaged_moment['observations']
+        # observations = imaged_moment['observations']
+        observations = []
+        for moment in all_moments:
+            for obs in moment['observations']:
+                observations.append(obs)
         localized = 0
         for observation in observations:
             observation_metadata = {

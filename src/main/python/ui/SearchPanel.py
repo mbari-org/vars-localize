@@ -17,7 +17,7 @@ Dock widget used to search for concepts and select frame grabs.
 @license: __license__
 '''
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QDockWidget, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import QDockWidget, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QLabel
 
 from ui.ConceptSearchbar import ConceptSearchbar
 
@@ -40,18 +40,27 @@ class SearchPanel(QDockWidget):
 
         self.concept = None
 
+        self.top_bar = QWidget()
+        self.top_bar.setLayout(QHBoxLayout())
+
         self.search_bar = ConceptSearchbar()
         self.search_bar.set_callback(self.concept_selected)
+
+        self.time_window = QSpinBox()
+        self.time_window.setRange(0, 20000)
+
+        self.top_bar.layout().addWidget(self.search_bar)
+        self.top_bar.layout().addWidget(self.time_window)
 
         self.entry_tree = ImagedMomentTree()
         self.entry_tree.currentItemChanged.connect(self.parent().load_entry)
 
         self.paginator = Paginator()
-        self.paginator.set_limit(50)
+        self.paginator.set_limit(25)
         self.paginator.left_signal.connect(self.load_page)
         self.paginator.right_signal.connect(self.load_page)
 
-        self.contents.layout().addWidget(self.search_bar)
+        self.contents.layout().addWidget(self.top_bar)
         self.contents.layout().addWidget(self.entry_tree, stretch=1)
         self.contents.layout().addWidget(self.paginator)
 
@@ -67,7 +76,7 @@ class SearchPanel(QDockWidget):
 
     def load_page(self):
         if self.concept:
-            self.entry_tree.query(self.concept, self.paginator.offset, self.paginator.limit)  # Get observations
+            self.entry_tree.query(self.concept, self.paginator.offset, self.paginator.limit)  # Get imaged moments
             self.paginator.set_count(len(self.entry_tree.loaded_uuids))  # Set count
 
     def select_next(self):

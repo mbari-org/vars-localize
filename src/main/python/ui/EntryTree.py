@@ -88,6 +88,8 @@ def update_imaged_moment_entry(entry: EntryTreeItem):
         obs_item.metadata['status'] = len(obs_item.metadata['boxes'])
         if not obs_item.metadata['status']:
             obs_item.set_background('status', QColor('#ff9696'))
+        else:
+            obs_item.set_background('status', QColor('#ffffff'))
         obs_item.update()
 
     percent_localized = localized / len(entry.metadata['observations'])

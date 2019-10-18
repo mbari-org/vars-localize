@@ -1,7 +1,7 @@
 # ImageView.py (vars-localize)
 import util.requests
 from ui.ConceptSearchbar import ConceptSearchbar
-from ui.EntryTree import EntryTreeItem
+from ui.EntryTree import EntryTreeItem, update_imaged_moment_entry
 from util.utils import extract_bounding_boxes
 
 __author__ = "Kevin Barnard"
@@ -246,7 +246,7 @@ class ImageView(QGraphicsView):
             box.source.observer = self.window().observer  # Update observer field
             box.source.strength = utils.get_observer_confidence(box.source.observer)  # Update strength field
             modify_box(box_json_after, self.observation_uuid, box.source.association_uuid)  # Call modification request
-            self.window().search_panel.entry_tree.update_imaged_moment_entry(self.moment)  # Update tree
+            update_imaged_moment_entry(self.moment)  # Update tree
 
         self.pt_1 = None
         self.pt_2 = None
@@ -264,7 +264,7 @@ class ImageView(QGraphicsView):
         if box in self.observation_map[box.observation_uuid].metadata['boxes']:  # Protect
             source_boxes.remove(box)
             delete_box(box.association_uuid)  # Call deletion request
-            self.window().search_panel.entry_tree.update_imaged_moment_entry(self.moment)  # Update tree
+            update_imaged_moment_entry(self.moment)  # Update tree
 
     def calc_drag_rect(self):
         """
@@ -364,7 +364,10 @@ class ImageView(QGraphicsView):
             **kwargs
         )
 
+        image = self.moment.metadata['cached_image']  # Backup image, so no re-fetch
         self.window().search_panel.entry_tree.load_imaged_moment_entry(self.moment)  # Reload the tree
+        self.moment.metadata['cached_image'] = image
+        self.load_moment(self.moment)  # Reload imaged moment
 
         return observation
 
@@ -388,7 +391,7 @@ class ImageView(QGraphicsView):
         self.observation_map[uuid].metadata['boxes'].append(box)
         response_json = create_box(box.get_json(), uuid)
         box.association_uuid = response_json['uuid']
-        self.window().search_panel.entry_tree.update_imaged_moment_entry(self.moment)  # Update tree
+        update_imaged_moment_entry(self.moment)  # Update tree
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self.pixmap_src:

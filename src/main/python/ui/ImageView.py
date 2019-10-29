@@ -42,6 +42,7 @@ class ImageView(QGraphicsView):
         self.refit()
 
         self.observation_uuid = None
+        self.observer = None
         self.moment = None
         self.observation_map = None
         self.enabled_observations = None
@@ -49,6 +50,9 @@ class ImageView(QGraphicsView):
         self.pixmap_src = None
         self.pixmap_scalar = None
         self.pixmap_pos = None
+
+        self.select_next = None
+        self.select_prev = None
 
         # Graphical box selection
         self.pt_1 = None
@@ -243,7 +247,7 @@ class ImageView(QGraphicsView):
 
         box_json_after = box.source.get_json()
         if box_json_after != box_json_before:
-            box.source.observer = self.window().observer  # Update observer field
+            box.source.observer = self.observer  # Update observer field
             box.source.strength = utils.get_observer_confidence(box.source.observer)  # Update strength field
             modify_box(box_json_after, self.observation_uuid, box.source.association_uuid)  # Call modification request
             update_imaged_moment_entry(self.moment)  # Update tree
@@ -360,12 +364,12 @@ class ImageView(QGraphicsView):
         observation = create_observation(  # Call observation creation request
             self.moment.metadata['video_reference_uuid'],
             concept,
-            self.window().observer,
+            self.observer,
             **kwargs
         )
 
         image = self.moment.metadata['cached_image']  # Backup image, so no re-fetch
-        self.window().search_panel.entry_tree.load_imaged_moment_entry(self.moment)  # Reload the tree
+        self.moment.treeWidget().load_imaged_moment_entry(self.moment)  # Reload the tree
         self.moment.metadata['cached_image'] = image
         self.load_moment(self.moment)  # Reload imaged moment
 
@@ -407,7 +411,7 @@ class ImageView(QGraphicsView):
                 }
 
                 concept = self.observation_map[self.observation_uuid].metadata['concept'] if self.observation_uuid else ''
-                observer = self.window().observer
+                observer = self.observer
                 new_src_box = SourceBoundingBox(
                     box_json,
                     concept,
@@ -445,6 +449,6 @@ class ImageView(QGraphicsView):
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key_Up:
-            self.window().search_panel.select_prev()
+            self.select_prev()
         elif event.key() == Qt.Key_Down:
-            self.window().search_panel.select_next()
+            self.select_next()

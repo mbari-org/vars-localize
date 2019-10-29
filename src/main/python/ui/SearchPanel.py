@@ -54,6 +54,8 @@ class SearchPanel(QDockWidget):
 
         self.entry_tree = ImagedMomentTree()
         self.entry_tree.currentItemChanged.connect(self.parent().load_entry)
+        self.entry_tree.time_window = 0
+        self.time_window.valueChanged.connect(self.entry_tree.set_time_window)
 
         self.paginator = Paginator()
         self.paginator.set_limit(25)

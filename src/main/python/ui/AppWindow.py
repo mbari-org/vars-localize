@@ -52,6 +52,10 @@ class AppWindow(QMainWindow):
             print('You must login to use this tool.')
             exit(1)
 
+        self.display_panel.image_view.observer = self.observer
+        self.display_panel.image_view.select_next = self.search_panel.select_next
+        self.display_panel.image_view.select_prev = self.search_panel.select_prev
+
     def load_entry(self, current: EntryTreeItem, previous: EntryTreeItem):
         """
         Load the current entry into the display panel

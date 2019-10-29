@@ -117,8 +117,16 @@ class ImagedMomentTree(EntryTree):
 
         self.loaded_concept = None
         self.loaded_uuids = []
+        self.time_window = None
 
         self.currentItemChanged.connect(self.item_changed)
+
+    def set_time_window(self, value: int):
+        """
+        Update the time window value
+        :param value: Value to set
+        :return: None
+        """
 
     def fetch_uuids(self, concept: str):
         """
@@ -165,7 +173,7 @@ class ImagedMomentTree(EntryTree):
 
         all_moments = get_windowed_moments(  # Fetch all moments in window
             [meta['video_reference_uuid']], meta['uuid'],
-            self.window().search_panel.time_window.value()
+            self.time_window
         )
         for moment in all_moments:  # Add other observations to the imaged moment observations list
             known_observation_uuids = [obs['uuid'] for obs in meta['observations']]

@@ -167,6 +167,9 @@ class ImagedMomentTree(EntryTree):
         :param entry: Imaged moment entry item
         :return: None
         """
+        while entry.childCount():  # Remove children
+            entry.removeChild(entry.child(0))
+
         entry.metadata = get_imaged_moment(entry.metadata['uuid'])  # Fetch original imaged moment data
         meta = entry.metadata
         meta['type'] = 'imaged_moment'

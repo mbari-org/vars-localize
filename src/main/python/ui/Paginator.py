@@ -3,6 +3,8 @@ from PyQt5.QtCore import pyqtSignal, Qt
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel
 
+import util.utils
+
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
 __credits__ = ["MBARI"]
@@ -36,11 +38,11 @@ class Paginator(QWidget):
         self.nav_label = QLabel()
 
         self.left_button = QPushButton()
-        self.left_button.setIcon(QIcon('images/arrow_left'))
+        self.left_button.setIcon(QIcon(util.utils.get_appctxt().get_resource('images/arrow_left.png')))
         self.left_button.pressed.connect(self.left_press)
 
         self.right_button = QPushButton()
-        self.right_button.setIcon(QIcon('images/arrow_right'))
+        self.right_button.setIcon(QIcon(util.utils.get_appctxt().get_resource('images/arrow_right.png')))
         self.right_button.pressed.connect(self.right_press)
 
         self.layout().addWidget(self.nav_label, stretch=1)

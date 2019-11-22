@@ -1,6 +1,6 @@
 {
     "categories": "Utility;",
-    "description": "",
-    "author_email": "",
+    "description": "Localization tool for imagery within the VARS database.",
+    "author_email": "kbarnard@mbari.org",
     "url": ""
 }

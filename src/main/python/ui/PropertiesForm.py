@@ -14,7 +14,7 @@ Form for inputting and displaying properties about localizations and annotations
 @status: __status__
 @license: __license__
 '''
-from PyQt5.QtWidgets import QGroupBox, QFormLayout, QSpinBox
+from PyQt5.QtWidgets import QGroupBox, QFormLayout, QSpinBox, QLineEdit
 
 from ui.BoundingBox import SourceBoundingBox
 from ui.ConceptSearchbar import ConceptSearchbar
@@ -32,11 +32,14 @@ class PropertiesForm(QGroupBox):
         self.form = QFormLayout()
         self.setLayout(self.form)
 
+        self.concept_field = ConceptSearchbar()
+        self.concept_field.setText(source.label)
         self.x_field = QSpinBox()
         self.y_field = QSpinBox()
         self.w_field = QSpinBox()
         self.h_field = QSpinBox()
 
+        self.concept_field.set_callback(self.source.set_label)
         self.x_field.valueChanged.connect(self.source.setX)
         self.y_field.valueChanged.connect(self.source.setY)
         self.w_field.valueChanged.connect(self.source.setWidth)
@@ -45,6 +48,7 @@ class PropertiesForm(QGroupBox):
         self.x_field.valueChanged.connect(self.x_changed)
         self.y_field.valueChanged.connect(self.y_changed)
 
+        self.form.addRow('Concept', self.concept_field)
         self.form.addRow('X-Position', self.x_field)
         self.form.addRow('Y-Position', self.y_field)
         self.form.addRow('Width', self.w_field)

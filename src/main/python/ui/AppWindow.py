@@ -1,4 +1,7 @@
 # AppWindow.py (vars-localize)
+import os
+import sys
+
 from ui.EntryTree import EntryTreeItem
 
 __author__ = "Kevin Barnard"
@@ -28,11 +31,11 @@ from util.requests import get_all_users
 
 class AppWindow(QMainWindow):
 
-    def __init__(self, parent=None):
+    def __init__(self, appctxt, parent=None):
         super(AppWindow, self).__init__(parent)
 
-        self.setWindowTitle('VARS Localization Tool')
-        self.setWindowIcon(QIcon('images/logo.png'))
+        self.setWindowTitle('VARS Anchor')
+        self.setWindowIcon(QIcon(appctxt.get_resource('images/Icon.ico')))
 
         self.central_container = QWidget()
         self.central_container.setLayout(QHBoxLayout())

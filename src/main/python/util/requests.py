@@ -1,6 +1,8 @@
 # requests.py (vars-localize)
 import json
 
+import util.utils
+
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
 __credits__ = ["MBARI"]
@@ -16,10 +18,7 @@ HTTP request functions for interacting with M3 endpoints.
 @license: __license__
 '''
 import requests
-import urllib.parse
 from PyQt5.QtGui import QPixmap
-import util.utils
-import util.query
 
 concepts = None
 
@@ -331,3 +330,37 @@ def get_windowed_moments(video_reference_uuids: list, imaged_moment_uuid: str, t
     )
     response_json = response.json()
     return response_json
+
+
+def modify_concept(observation_uuid: str, new_concept: str, observer: str, retry=True):
+    """
+    Rename an observation.
+    :param observation_uuid: Observation UUID to rename
+    :param new_concept: New concept
+    :param observer: Observer to update
+    :param retry: Retry after authentication failure
+    :return: HTTP response if success, else None
+    """
+    token = check_auth()
+
+    request_data = {
+        'concept': new_concept,
+        'observer': observer
+    }
+
+    try:
+        response = requests.put(
+            util.utils.get_property('endpoints', 'observation') + '/{}'.format(observation_uuid),
+            data=request_data,
+            headers={
+                'Authorization': 'BEARER {}'.format(token)
+            }
+        )
+        return response.json()
+    except Exception as e:
+        if retry:
+            auth()
+            return modify_concept(observation_uuid, new_concept, observer, retry=False)
+        else:
+            print('Box modification failed!')
+            print(e)

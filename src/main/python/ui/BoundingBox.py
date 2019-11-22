@@ -1,4 +1,12 @@
 # BoundingBox.py (vars-localize)
+import typing
+
+from PyQt5.QtCore import Qt, QRectF, QPoint, QSizeF, QRect, QPointF
+from PyQt5.QtGui import QColor, QPainter, QPen, QFont
+from PyQt5.QtWidgets import QGraphicsItem, QStyleOptionGraphicsItem, QWidget, QGraphicsSceneHoverEvent
+
+import util.requests
+import util.utils
 
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
@@ -14,13 +22,6 @@ Bounding box data structure and manager helper class.
 @status: __status__
 @license: __license__
 '''
-import typing
-
-from PyQt5.QtCore import Qt, QRectF, QPoint, QSizeF, QRect, QPointF
-from PyQt5.QtGui import QColor, QPainter, QPen, QFont
-from PyQt5.QtWidgets import QGraphicsItem, QStyleOptionGraphicsItem, QWidget
-
-from util import utils
 
 
 class SourceBoundingBox(QRect):
@@ -90,7 +91,7 @@ class GraphicsBoundingBox(QGraphicsItem):
         :return: None
         """
         self.label = label
-        self.color.setHsv(*utils.n_split_hash(label, 1), 255, 255)
+        self.color.setHsv(*util.utils.n_split_hash(label, 1), 255, 255)
 
     def set_highlighted(self, highlighted: bool):
         """
@@ -134,6 +135,7 @@ class GraphicsBoundingBox(QGraphicsItem):
         pen = QPen(self.color.lighter(), 4 if self.highlighted else 2)
         painter.setPen(pen)
         painter.drawRect(0, 0, self.width, self.height)
+
         painter.setFont(QFont('Helvetica', 12, QFont.Bold))
         painter.drawText(0, self.height,
                          self.width, 20,
@@ -191,6 +193,19 @@ class BoundingBoxManager:
         if self.box_click_callback:
             if selected_box:
                 self.box_click_callback(selected_box)
+
+    def get_box_hovered(self, pt: QPoint):
+        """
+        Check managed boxes for point containment, return hovered box if any
+        :param pt: Point to process
+        :return: Hovered box, if any
+        """
+        hovered_box = None
+        for box in self.bounding_boxes:
+            if box.contains(pt):
+                if not hovered_box or box.area() < hovered_box.area():
+                    hovered_box = box
+        return hovered_box
 
     def boxes(self):
         return self.bounding_boxes

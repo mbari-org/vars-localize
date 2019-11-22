@@ -127,5 +127,4 @@ dmypy.json
 .idea/
 
 # Project specific
-target/
-cache/token.json
+src/main/resources/base/cache/token.json

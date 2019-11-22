@@ -1,6 +1,12 @@
 # utils.py (vars-localize)
 from ui.BoundingBox import SourceBoundingBox
 
+import configparser
+from functools import reduce
+import json
+import os
+import urllib.parse
+
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
 __credits__ = ["MBARI"]
@@ -15,14 +21,22 @@ Utility functions for the application.
 @status: __status__
 @license: __license__
 '''
-import configparser
-from functools import reduce
-import json
-import os
-import http.client
-import urllib.parse
 
+appctxt = None
 config = None
+
+
+def set_appctxt(appctxt_set):
+    global appctxt
+    appctxt = appctxt_set
+
+
+def get_appctxt():
+    if appctxt:
+        return appctxt
+    else:
+        print('FATAL APP CONTEXT ERROR, EXITING')
+        exit(1)
 
 
 def n_split_hash(string: str, n: int, maxval: int = 255):
@@ -53,7 +67,7 @@ def get_property(category, prop):
     global config
     if not config:
         config = configparser.ConfigParser()
-        config.read('config/config.ini')
+        config.read(get_appctxt().get_resource('config/config.ini'))
     if category in config:
         if prop in config[category]:
             return config[category][prop]
@@ -65,7 +79,7 @@ def get_api_key():
     Returns the API key for authorization from 'config/api_key.txt'
     :return: API key string
     """
-    api_key_file = open('config/api_key.txt', 'r')
+    api_key_file = open(get_appctxt().get_resource('config/api_key.txt'), 'r')
     key = api_key_file.readlines()[0].strip()
     api_key_file.close()
     return key
@@ -77,7 +91,7 @@ def cache_token(token: str):
     :param token: JWT access token JSON string
     :return: None
     """
-    token_file = open('cache/token.json', 'w')
+    token_file = open(get_appctxt().get_resource('cache/token.json'), 'w')
     token_file.write(token)
     token_file.close()
 
@@ -89,7 +103,7 @@ def get_token():
     """
     if not os.path.exists('cache/token.json'):
         return None
-    with open('cache/token.json', 'r') as f:
+    with open(get_appctxt().get_resource('cache/token.json'), 'r') as f:
         json_str = ' '.join([line.strip() for line in f.readlines()])
         access_token = json.loads(json_str)['access_token']
         f.close()
@@ -136,7 +150,7 @@ def get_observer_confidence(observer: str):
     :param observer: Observer to lookup
     :return: Confidence value (any)
     """
-    with open('config/strength_map.json') as f:
+    with open(get_appctxt().get_resource('config/strength_map.json'), 'r') as f:
         json_obj = json.load(f)
         for conf_rank in json_obj.keys():
             if conf_rank != 'default' and observer in json_obj[conf_rank]:

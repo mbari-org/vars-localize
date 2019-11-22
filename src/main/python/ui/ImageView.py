@@ -1,8 +1,14 @@
 # ImageView.py (vars-localize)
-import util.requests
 from ui.ConceptSearchbar import ConceptSearchbar
 from ui.EntryTree import EntryTreeItem, update_imaged_moment_entry
-from util.utils import extract_bounding_boxes
+from PyQt5.QtCore import Qt, QPoint, QPointF, QRectF, QLineF
+from PyQt5.QtGui import QResizeEvent, QMouseEvent, QPixmap, QColor, QKeyEvent, QPen, QFont
+from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QDialog, QVBoxLayout, QPushButton
+
+from ui.BoundingBox import BoundingBoxManager, GraphicsBoundingBox, SourceBoundingBox
+from ui.PropertiesDialog import PropertiesDialog
+from util import utils
+from util.requests import delete_box, create_box, modify_box, create_observation, modify_concept, fetch_image
 
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
@@ -18,14 +24,6 @@ QGraphicsView custom widget for controlling image/localization graphics and inpu
 @status: __status__
 @license: __license__
 '''
-from PyQt5.QtCore import Qt, QPoint, QPointF, QRectF, QLineF
-from PyQt5.QtGui import QResizeEvent, QMouseEvent, QPixmap, QColor, QKeyEvent, QPen, QFont
-from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QDialog, QVBoxLayout, QLabel, QPushButton
-
-from ui.BoundingBox import BoundingBoxManager, GraphicsBoundingBox, SourceBoundingBox
-from ui.PropertiesDialog import PropertiesDialog
-from util import utils
-from util.requests import delete_box, create_box, modify_box, create_observation
 
 
 class ImageView(QGraphicsView):
@@ -58,10 +56,19 @@ class ImageView(QGraphicsView):
         self.pt_1 = None
         self.pt_2 = None
         self.selected_box = None
+        self.hovered_box = None
         self.mouse_line_pen = QPen(Qt.red)
-        # self.mouse_line_pen.setStyle(Qt.DotLine)
         self.mouse_hline = QLineF()
         self.mouse_vline = QLineF()
+
+        self.hov_tl_rect = None
+        self.hov_tr_rect = None
+        self.hov_bl_rect = None
+        self.hov_br_rect = None
+        self.resize_type = None
+        self.resize_offset = None
+
+        self.hov_pt_1 = None
 
     def redraw(self):
         """
@@ -82,6 +89,8 @@ class ImageView(QGraphicsView):
                         box_item = self.draw_bounding_box(box, self.observation_map[uuid].metadata['box_manager'])
                         if self.selected_box == box:
                             box_item.set_highlighted(True)
+                        if self.hovered_box == box:
+                            self.draw_drag_corners(box_item)
 
             # Draw crosshairs
             self.scene().addLine(self.mouse_hline, self.mouse_line_pen)
@@ -134,7 +143,7 @@ class ImageView(QGraphicsView):
         """
         self.moment = entry
         if 'cached_image' not in entry.metadata.keys():  # Cache pixmap
-            entry.metadata['cached_image'] = util.requests.fetch_image(entry.metadata['url'])
+            entry.metadata['cached_image'] = fetch_image(entry.metadata['url'])
         self.set_pixmap(entry.metadata['cached_image'])  # Set pixmap
         observation_entries = [entry.child(idx) for idx in range(entry.childCount())]
         self.observation_map = dict([(entry.metadata['uuid'], entry) for entry in observation_entries])  # observation uuid -> entry tree item
@@ -144,6 +153,18 @@ class ImageView(QGraphicsView):
             observation_entry.metadata['box_manager'] = BoundingBoxManager()  # Construct new bounding box manager
             observation_entry.metadata['box_manager'].set_box_click_callback(self.show_box_properties_dialog)
             self.enabled_observations[uuid] = True
+
+    def draw_drag_corners(self, box: GraphicsBoundingBox):
+        length = 10
+        tl_rect = self.scene().addRect(box.x(), box.y(), length, length, pen=box.color.lighter())
+        tr_rect = self.scene().addRect(box.x() + box.width - length, box.y(), length, length, pen=box.color.lighter())
+        bl_rect = self.scene().addRect(box.x(), box.y() + box.height - length, length, length, pen=box.color.lighter())
+        br_rect = self.scene().addRect(box.x() + box.width - length, box.y() + box.height - length, length, length, pen=box.color.lighter())
+
+        self.hov_tl_rect = tl_rect.rect()
+        self.hov_tr_rect = tr_rect.rect()
+        self.hov_bl_rect = bl_rect.rect()
+        self.hov_br_rect = br_rect.rect()
 
     def set_pixmap(self, pixmap):
         """
@@ -237,6 +258,7 @@ class ImageView(QGraphicsView):
         self.redraw()
 
         box_json_before = box.source.get_json()
+        box_label_before = box.source.label
 
         dialog = PropertiesDialog(box.source)
         dialog.setup_form(self.pixmap_src, self.redraw)
@@ -246,10 +268,15 @@ class ImageView(QGraphicsView):
         dialog.exec_()
 
         box_json_after = box.source.get_json()
-        if box_json_after != box_json_before:
+        box_label_after = box.source.label
+        if box_json_after != box_json_before or box_label_after != box_label_before:
+            if box_label_after != box_label_before:
+                modify_concept(box.source.observation_uuid, box_label_after, self.observer)  # Update the observation's concept
+                self.observation_map[box.source.observation_uuid].metadata['concept'] = box_label_after
+                self.reload_moment()
             box.source.observer = self.observer  # Update observer field
             box.source.strength = utils.get_observer_confidence(box.source.observer)  # Update strength field
-            modify_box(box_json_after, self.observation_uuid, box.source.association_uuid)  # Call modification request
+            modify_box(box_json_after, box.source.observation_uuid, box.source.association_uuid)  # Call modification request
             update_imaged_moment_entry(self.moment)  # Update tree
 
         self.pt_1 = None
@@ -368,12 +395,19 @@ class ImageView(QGraphicsView):
             **kwargs
         )
 
+        self.reload_moment()
+
+        return observation
+
+    def reload_moment(self):
+        """
+        Fully reload the imaged moment.
+        :return: None
+        """
         image = self.moment.metadata['cached_image']  # Backup image, so no re-fetch
         self.moment.treeWidget().load_imaged_moment_entry(self.moment)  # Reload the tree
         self.moment.metadata['cached_image'] = image
         self.load_moment(self.moment)  # Reload imaged moment
-
-        return observation
 
     def handle_new_box(self, box: SourceBoundingBox):
         """
@@ -420,20 +454,93 @@ class ImageView(QGraphicsView):
                 )
                 if new_src_box.width() * new_src_box.height() > 100:
                     self.handle_new_box(new_src_box)
+
+            if self.resize_type:
+                modify_box(self.hovered_box.get_json(), self.hovered_box.observation_uuid, self.hovered_box.association_uuid)
+
             self.pt_1 = None
             self.pt_2 = None
+            self.hov_pt_1 = None
+            self.resize_offset = None
+            self.resize_type = None
             self.redraw()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if self.pixmap_src:
             self.pt_1 = self.get_im_rel_point(event.pos())
+        if self.hovered_box:
+            corner_box = None
+            self.hov_pt_1 = self.get_im_rel_point(event.pos())
+            if self.hov_tl_rect.contains(event.pos()):
+                self.resize_type = 1
+                corner_box = self.hov_tl_rect
+            elif self.hov_tr_rect.contains(event.pos()):
+                self.resize_type = 2
+                corner_box = self.hov_tr_rect
+            elif self.hov_bl_rect.contains(event.pos()):
+                self.resize_type = 3
+                corner_box = self.hov_bl_rect
+            elif self.hov_br_rect.contains(event.pos()):
+                self.resize_type = 4
+                corner_box = self.hov_br_rect
+            else:
+                self.hov_pt_1 = None
+
+            if corner_box:
+                self.pt_1 = None
+                x, y, _, _ = corner_box.getRect()
+                corner = self.get_im_rel_point(QPoint(x, y))
+                self.resize_offset = self.hov_pt_1 - corner
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self.pixmap_src:
             self.pt_2 = self.get_im_rel_point(event.pos())
+            if self.hovered_box:
+                if self.resize_type == 1:
+                    new_tl_corner = (self.pt_2 - self.resize_offset).toPoint()
+                    if new_tl_corner.x() < 0:
+                        new_tl_corner.setX(0)
+                    if new_tl_corner.y() < 0:
+                        new_tl_corner.setY(0)
+                    self.hovered_box.setTopLeft(new_tl_corner)
+                elif self.resize_type == 2:
+                    new_tr_corner = (self.pt_2 - self.resize_offset).toPoint()
+                    new_tr_corner.setX(new_tr_corner.x() + 2 * self.resize_offset.x())
+                    if new_tr_corner.x() > self.pixmap_src.width():
+                        new_tr_corner.setX(self.pixmap_src.width())
+                    if new_tr_corner.y() < 0:
+                        new_tr_corner.setY(0)
+                    self.hovered_box.setTopRight(new_tr_corner)
+                elif self.resize_type == 3:
+                    new_bl_corner = (self.pt_2 - self.resize_offset).toPoint()
+                    new_bl_corner.setY(new_bl_corner.y() + 2 * self.resize_offset.y())
+                    if new_bl_corner.x() < 0:
+                        new_bl_corner.setX(0)
+                    if new_bl_corner.y() > self.pixmap_src.height():
+                        new_bl_corner.setY(self.pixmap_src.height())
+                    self.hovered_box.setBottomLeft(new_bl_corner)
+                elif self.resize_type == 4:
+                    new_br_corner = (self.pt_2 - self.resize_offset).toPoint()
+                    new_br_corner.setX(new_br_corner.x() + 2 * self.resize_offset.x())
+                    new_br_corner.setY(new_br_corner.y() + 2 * self.resize_offset.y())
+                    if new_br_corner.x() > self.pixmap_src.width():
+                        new_br_corner.setX(self.pixmap_src.width())
+                    if new_br_corner.y() > self.pixmap_src.height():
+                        new_br_corner.setY(self.pixmap_src.height())
+                    self.hovered_box.setBottomRight(new_br_corner)
 
         self.mouse_hline.setLine(0, event.y(), self.scene().width(), event.y())
         self.mouse_vline.setLine(event.x(), 0, event.x(), self.scene().height())
+
+        if self.enabled_observations and not self.resize_type:
+            for uuid, enabled in self.enabled_observations.items():
+                if enabled:
+                    hov_box_item = self.observation_map[uuid].metadata['box_manager'].get_box_hovered(event.pos())
+                    if hov_box_item:
+                        self.hovered_box = hov_box_item.source
+                    else:
+                        self.hovered_box = None
+
         self.redraw()
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:

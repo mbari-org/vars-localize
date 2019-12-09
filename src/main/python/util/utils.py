@@ -91,9 +91,14 @@ def cache_token(token: str):
     :param token: JWT access token JSON string
     :return: None
     """
-    token_file = open(get_appctxt().get_resource('cache/token.json'), 'w')
-    token_file.write(token)
-    token_file.close()
+    if not os.path.exists("cache"):
+        os.makedirs("cache")
+    with open("cache/token.json", 'w') as f:
+        f.write(token)
+    # brian: The code below is failing with [Errno 2] Could not locate resource: 'cache/token.json'
+    # token_file = open(get_appctxt().get_resource('cache/token.json'), 'w')
+    # token_file.write(token)
+    # token_file.close()
 
 
 def get_token():
@@ -103,7 +108,8 @@ def get_token():
     """
     if not os.path.exists('cache/token.json'):
         return None
-    with open(get_appctxt().get_resource('cache/token.json'), 'r') as f:
+    # with open(get_appctxt().get_resource('cache/token.json'), 'r') as f:
+    with open('cache/token.json', 'r') as f:
         json_str = ' '.join([line.strip() for line in f.readlines()])
         access_token = json.loads(json_str)['access_token']
         f.close()

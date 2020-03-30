@@ -49,6 +49,8 @@ From the root directory, run:
 ```bash
 conda env create -f environment.yml
 ```
+*Note: Windows users should use `environment_windows.yml` instead of `environment.yml`*
+
 This will create an Anaconda environment named *vars-localize* with the python dependencies.
 
 **2. Activate Anaconda environment**
@@ -60,7 +62,7 @@ conda activate vars-localize
 
 **3. Install the fman build system**
 
-With the environemnt activated, run:
+With the environment activated, run:
 ```bash
 pip install fbs
 ```
@@ -71,6 +73,7 @@ If setup with Anaconda does not work or isn't preferred, the dependencies can be
 Run the following commands to install the required packages in your system.
 ```bash
 pip3 install PyQt5
+pip3 install requests
 pip3 install fbs
 ```
 

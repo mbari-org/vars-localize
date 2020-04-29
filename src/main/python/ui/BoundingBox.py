@@ -42,7 +42,10 @@ class SourceBoundingBox(QRect):
         self.strength = strength
 
     def set_label(self, label):
-        self.label = label
+        if label in util.requests.get_all_concepts():
+            self.label = label
+        else:
+            print('Bad label for bounding box!')
 
     def get_json(self):
         return {

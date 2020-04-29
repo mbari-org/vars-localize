@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QDialog, QVBoxLayout,
 from ui.BoundingBox import BoundingBoxManager, GraphicsBoundingBox, SourceBoundingBox
 from ui.PropertiesDialog import PropertiesDialog
 from util import utils
-from util.requests import delete_box, create_box, modify_box, create_observation, modify_concept, fetch_image
+from util.requests import delete_box, create_box, modify_box, create_observation, modify_concept, fetch_image, get_all_concepts
 
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
@@ -361,8 +361,10 @@ class ImageView(QGraphicsView):
         def update_concept_selected(concept):
             nonlocal concept_selected
             nonlocal submit_button
-            concept_selected = concept
-            submit_button.setEnabled(True)
+            if concept_selected in get_all_concepts():
+                concept_selected = concept
+                submit_button.setEnabled(True)
+
         search.set_callback(update_concept_selected)
 
         dialog.layout().addWidget(search)

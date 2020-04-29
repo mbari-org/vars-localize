@@ -38,4 +38,4 @@ class ConceptSearchbar(QLineEdit):
         :param func: Activation callback
         :return: None
         """
-        self.concept_completer.activated.connect(func)
+        self.textChanged.connect(func)

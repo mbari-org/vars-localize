@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import QDockWidget, QVBoxLayout, QWidget, QHBoxLayout, QSpi
 
 from ui.ConceptSearchbar import ConceptSearchbar
 
-from util.requests import concept_count
+from util.requests import concept_count, get_all_concepts
 
 
 class SearchPanel(QDockWidget):
@@ -67,8 +67,9 @@ class SearchPanel(QDockWidget):
         self.contents.layout().addWidget(self.paginator)
 
     def concept_selected(self, concept):
-        self.concept = concept
-        self.load_results()
+        if concept in get_all_concepts():
+            self.concept = concept
+            self.load_results()
 
     def load_results(self):
         self.parent().display_panel.image_view.set_pixmap(None)

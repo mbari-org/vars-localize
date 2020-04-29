@@ -61,6 +61,7 @@ class EntryTree(QTreeWidget):
 
         self.setHeaderLabels(headers)
         self.header_map = dict([tup[::-1] for tup in enumerate(headers)])  # header -> column lookup
+        self.resizeColumnToContents(self.header_map['status'])
 
     def add_item(self, data, parent=None):
         """
@@ -210,6 +211,13 @@ class ImagedMomentTree(EntryTree):
         :return: None
         """
         if not current or not current.metadata:
+            self.parent().parent().association_text.setText('')
             return
-        if current.metadata['type'] == 'imaged_moment' and not current.childCount():
-            self.load_imaged_moment(current)
+        if current.metadata['type'] == 'imaged_moment':
+            if not current.childCount():
+                self.load_imaged_moment(current)
+            self.parent().parent().association_text.setText('')
+        elif current.metadata['type'] == 'observation':
+            associations = current.metadata['associations']
+            assoc_lines = ['{} | {} | {}'.format(assoc['link_name'], assoc['to_concept'], assoc['link_value']) for assoc in associations if assoc['link_name'] != 'bounding box']
+            self.parent().parent().association_text.setText('\n'.join(assoc_lines))

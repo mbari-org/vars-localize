@@ -258,7 +258,6 @@ class ImageView(QGraphicsView):
         self.redraw()
 
         box_json_before = box.source.get_json()
-        box_label_before = box.source.label
 
         dialog = PropertiesDialog(box.source)
         dialog.setup_form(self.pixmap_src, self.redraw)
@@ -268,9 +267,8 @@ class ImageView(QGraphicsView):
         dialog.exec_()
 
         box_json_after = box.source.get_json()
-        box_label_after = box.source.label
-        if box_json_after != box_json_before or box_label_after != box_label_before:
-            if box_label_after != box_label_before:
+        if box_json_after != box_json_before:
+            if False:
                 modify_concept(box.source.observation_uuid, box_label_after, self.observer)  # Update the observation's concept
                 self.observation_map[box.source.observation_uuid].metadata['concept'] = box_label_after
                 self.reload_moment()
@@ -365,7 +363,7 @@ class ImageView(QGraphicsView):
                 concept_selected = concept
                 submit_button.setEnabled(True)
 
-        search.set_callback(update_concept_selected)
+        search.textChanged.connect(update_concept_selected)
 
         dialog.layout().addWidget(search)
         dialog.layout().addWidget(submit_button)

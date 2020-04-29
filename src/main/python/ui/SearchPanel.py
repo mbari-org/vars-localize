@@ -1,5 +1,6 @@
 # SearchPanel.py (vars-localize)
-from ui.EntryTree import ImagedMomentTree, EntryTreeItem
+
+from ui.EntryTree import ImagedMomentTree
 from ui.Paginator import Paginator
 
 __author__ = "Kevin Barnard"
@@ -17,11 +18,11 @@ Dock widget used to search for concepts and select frame grabs.
 @license: __license__
 '''
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QDockWidget, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QLabel
+from PyQt5.QtWidgets import QDockWidget, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QScrollArea, QTextEdit, QLabel, QSizePolicy
 
 from ui.ConceptSearchbar import ConceptSearchbar
 
-from util.requests import concept_count, get_all_concepts
+from util.requests import get_all_concepts
 
 
 class SearchPanel(QDockWidget):
@@ -59,12 +60,23 @@ class SearchPanel(QDockWidget):
 
         self.paginator = Paginator()
         self.paginator.set_limit(25)
+        self.paginator.left_button.setDisabled(True)
+        self.paginator.right_button.setDisabled(True)
         self.paginator.left_signal.connect(self.load_page)
         self.paginator.right_signal.connect(self.load_page)
+
+        self.association_area = QScrollArea()
+        self.association_area.setWidgetResizable(True)
+        self.association_text = QLabel()
+        self.association_text.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        self.association_area.setWidget(self.association_text)
+        self.association_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.association_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
         self.contents.layout().addWidget(self.top_bar)
         self.contents.layout().addWidget(self.entry_tree, stretch=1)
         self.contents.layout().addWidget(self.paginator)
+        self.contents.layout().addWidget(self.association_area)
 
     def concept_selected(self, concept):
         if concept in get_all_concepts():

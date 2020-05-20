@@ -119,6 +119,7 @@ class ImagedMomentTree(EntryTree):
         self.loaded_concept = None
         self.loaded_uuids = []
         self.time_window = None
+        self.editable_uuids = set()
 
         self.currentItemChanged.connect(self.item_changed)
 
@@ -200,6 +201,8 @@ class ImagedMomentTree(EntryTree):
                 observation['uuid'],
                 im_ref_filter=meta['image_reference_uuid']
             ))
+            if observation['uuid'] in self.editable_uuids:
+                obs_item.set_background('uuid', QColor('#b9ff96'))
 
         update_imaged_moment_entry(entry)
 

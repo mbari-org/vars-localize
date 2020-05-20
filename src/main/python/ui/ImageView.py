@@ -359,11 +359,10 @@ class ImageView(QGraphicsView):
         def update_concept_selected(concept):
             nonlocal concept_selected
             nonlocal submit_button
-            if concept_selected in get_all_concepts():
-                concept_selected = concept
-                submit_button.setEnabled(True)
+            concept_selected = concept
+            submit_button.setEnabled(True)
 
-        search.textChanged.connect(update_concept_selected)
+        search.set_callback(update_concept_selected)
 
         dialog.layout().addWidget(search)
         dialog.layout().addWidget(submit_button)
@@ -394,6 +393,8 @@ class ImageView(QGraphicsView):
             self.observer,
             **kwargs
         )
+
+        self.moment.treeWidget().editable_uuids.add(observation['observation_uuid'])
 
         self.reload_moment()
 

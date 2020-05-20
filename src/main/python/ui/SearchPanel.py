@@ -1,6 +1,8 @@
 # SearchPanel.py (vars-localize)
+from PyQt5.QtGui import QColor
 
 from ui.EntryTree import ImagedMomentTree
+from ui.JSONTree import JSONTree
 from ui.Paginator import Paginator
 
 __author__ = "Kevin Barnard"
@@ -18,11 +20,13 @@ Dock widget used to search for concepts and select frame grabs.
 @license: __license__
 '''
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QDockWidget, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QScrollArea, QTextEdit, QLabel, QSizePolicy
+from PyQt5.QtWidgets import QDockWidget, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QScrollArea, QTextEdit, QLabel, QSizePolicy, QDialog, QPushButton
 
 from ui.ConceptSearchbar import ConceptSearchbar
 
 from util.requests import get_all_concepts
+
+from ui.EntryTree import EntryTreeItem
 
 
 class SearchPanel(QDockWidget):
@@ -55,6 +59,7 @@ class SearchPanel(QDockWidget):
 
         self.entry_tree = ImagedMomentTree()
         self.entry_tree.currentItemChanged.connect(self.parent().load_entry)
+        self.entry_tree.itemDoubleClicked.connect(self.show_popup)
         self.entry_tree.time_window = 0
         self.time_window.valueChanged.connect(self.entry_tree.set_time_window)
 
@@ -99,3 +104,49 @@ class SearchPanel(QDockWidget):
 
     def select_prev(self):
         self.entry_tree.setCurrentIndex(self.entry_tree.indexAbove(self.entry_tree.currentIndex()))
+
+    def show_popup(self, item: EntryTreeItem, col: int):
+        if item is None or item.metadata['type'] == 'imaged_moment':
+            return
+
+        editable = item.metadata['uuid'] in self.entry_tree.editable_uuids
+
+        dialog = QDialog()
+        dialog.setMinimumSize(600, 300)
+        dialog.setLayout(QVBoxLayout())
+        dialog.setWindowTitle('Observation Information')
+        dialog.setWindowFlag(Qt.WindowCloseButtonHint, False)
+
+        json_tree = JSONTree(item.metadata)
+        concept_widget = QWidget()
+        concept_widget.setLayout(QHBoxLayout())
+        delete_button = QPushButton('Delete')
+        delete_button.setStyleSheet('background-color: #ff9696')
+        delete_button.setDisabled(not editable)
+
+        def delete_observation():
+            nonlocal dialog
+            dialog.close()
+            # TODO Delete the observation
+
+        delete_button.pressed.connect(delete_observation)
+
+        dialog.layout().addWidget(json_tree)
+        dialog.layout().addWidget(concept_widget)
+        dialog.layout().addWidget(delete_button)
+
+        concept_field = ConceptSearchbar()
+        concept_field.setText(item.metadata['concept'])
+        concept_field.setDisabled(not editable)
+
+        concept_widget.layout().addWidget(QLabel('Concept:'))
+        concept_widget.layout().addWidget(concept_field)
+
+        concept_before = concept_field.text()
+
+        dialog.setModal(True)
+        dialog.exec_()
+
+        concept_after = concept_field.text()
+        if concept_after != concept_before:
+            pass  # TODO Update observation concept, reload imaged moment

@@ -91,7 +91,6 @@ def auth():
                 'Authorization': 'APIKEY {}'.format(util.utils.get_api_key())
             }
         )
-        print(response.text)
         util.utils.cache_token(response.content.decode())
         return response.json()['access_token']
     except Exception as e:

@@ -24,7 +24,7 @@ from PyQt5.QtWidgets import QDockWidget, QVBoxLayout, QWidget, QHBoxLayout, QSpi
 
 from ui.ConceptSearchbar import ConceptSearchbar
 
-from util.requests import get_all_concepts
+from util.requests import get_all_concepts, delete_observation, modify_concept
 
 from ui.EntryTree import EntryTreeItem
 
@@ -83,6 +83,8 @@ class SearchPanel(QDockWidget):
         self.contents.layout().addWidget(self.paginator)
         self.contents.layout().addWidget(self.association_area)
 
+        self.observer = ''
+
     def concept_selected(self, concept):
         if concept in get_all_concepts():
             self.concept = concept
@@ -109,7 +111,9 @@ class SearchPanel(QDockWidget):
         if item is None or item.metadata['type'] == 'imaged_moment':
             return
 
-        editable = item.metadata['uuid'] in self.entry_tree.editable_uuids
+        observation_uuid = item.metadata['uuid']
+
+        editable = observation_uuid in self.entry_tree.editable_uuids
 
         dialog = QDialog()
         dialog.setMinimumSize(600, 300)
@@ -123,13 +127,18 @@ class SearchPanel(QDockWidget):
         delete_button = QPushButton('Delete')
         delete_button.setStyleSheet('background-color: #ff9696')
         delete_button.setDisabled(not editable)
+        delete_lock = False
 
-        def delete_observation():
+        def do_delete_observation():
             nonlocal dialog
+            nonlocal delete_lock
             dialog.close()
-            # TODO Delete the observation
+            delete_observation(observation_uuid)
+            delete_lock = True
+            self.parent().display_panel.image_view.set_entry(item.parent())
+            self.parent().display_panel.image_view.reload_moment()
 
-        delete_button.pressed.connect(delete_observation)
+        delete_button.pressed.connect(do_delete_observation)
 
         dialog.layout().addWidget(json_tree)
         dialog.layout().addWidget(concept_widget)
@@ -148,5 +157,6 @@ class SearchPanel(QDockWidget):
         dialog.exec_()
 
         concept_after = concept_field.text()
-        if concept_after != concept_before:
-            pass  # TODO Update observation concept, reload imaged moment
+        if not delete_lock and concept_after != concept_before:  # Rename the observation
+            modify_concept(observation_uuid, concept_after, self.observer)
+            self.entry_tree.load_imaged_moment_entry(item.parent())

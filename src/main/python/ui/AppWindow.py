@@ -59,6 +59,8 @@ class AppWindow(QMainWindow):
         self.display_panel.image_view.select_next = self.search_panel.select_next
         self.display_panel.image_view.select_prev = self.search_panel.select_prev
 
+        self.search_panel.observer = self.observer
+
     def load_entry(self, current: EntryTreeItem, previous: EntryTreeItem):
         """
         Load the current entry into the display panel

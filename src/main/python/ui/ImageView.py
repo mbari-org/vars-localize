@@ -81,6 +81,8 @@ class ImageView(QGraphicsView):
         if self.pixmap_src:  # Image loaded, draw image + relevant components
             self.draw_pixmap(self.pixmap_src)
 
+            self.draw_ancillary_data()
+
             if self.enabled_observations:
                 for uuid, enabled in self.enabled_observations.items():
                     if not enabled:
@@ -209,6 +211,20 @@ class ImageView(QGraphicsView):
         pixmap_item = self.scene().addPixmap(scaled_pixmap)
         pixmap_item.setPos(self.pixmap_pos)
         return pixmap_item
+
+    def draw_ancillary_data(self):
+        """
+        Draw ancillary data on the image
+        :return: None
+        """
+        ancillary_data = self.moment.metadata['ancillary_data']
+        depth = ancillary_data['depth_meters']
+        latitude = ancillary_data['latitude']
+        longitude = ancillary_data['longitude']
+
+        text_item = self.scene().addText('Depth (m): {:<10.2f} Latitude: {:<10.4f} Longitude: {:<10.4f}'.format(depth, latitude, longitude), QFont('Courier New'))
+        text_item.setDefaultTextColor(QColor(255, 255, 255))
+        text_item.setPos(10, self.height() - text_item.boundingRect().height() - 10)
 
     def draw_bounding_box(self, box_src: SourceBoundingBox, manager: BoundingBoxManager):
         """
@@ -382,8 +398,8 @@ class ImageView(QGraphicsView):
         fields = self.moment.metadata.keys()
         if 'timecode' in fields:
             kwargs['timecode'] = self.moment.metadata['timecode']
-        if 'elapsed_time' in fields:
-            kwargs['elapsed_time'] = self.moment.metadata['elapsed_time']
+        if 'elapsed_time_millis' in fields:
+            kwargs['elapsed_time_millis'] = self.moment.metadata['elapsed_time_millis']
         if 'recorded_date' in fields:
             kwargs['recorded_date'] = self.moment.metadata['recorded_date']
 

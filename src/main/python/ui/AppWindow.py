@@ -59,6 +59,8 @@ class AppWindow(QMainWindow):
         self.display_panel.image_view.select_next = self.search_panel.select_next
         self.display_panel.image_view.select_prev = self.search_panel.select_prev
 
+        self.search_panel.observer = self.observer
+
     def load_entry(self, current: EntryTreeItem, previous: EntryTreeItem):
         """
         Load the current entry into the display panel
@@ -84,19 +86,24 @@ class AppWindow(QMainWindow):
         form = QFormLayout()
         form_widget.setLayout(form)
         observer_field = QLineEdit()
-        observer_completer = QCompleter(get_all_users())
+        all_valid_users = get_all_users()
+        observer_completer = QCompleter(all_valid_users)
         observer_completer.setCaseSensitivity(Qt.CaseInsensitive)
         observer_field.setCompleter(observer_completer)
 
         login_button = QPushButton('Login')
+        login_button.setEnabled(False)
         login_button.pressed.connect(login_dialog.close)
 
         def observer_field_updated(text):
-            self.observer = text
             nonlocal login_button
-            login_button.setEnabled(bool(text))
+            if text in all_valid_users:
+                self.observer = text
+                login_button.setEnabled(True)
+            else:
+                login_button.setEnabled(False)
 
-        observer_completer.activated.connect(observer_field_updated)
+        observer_field.textChanged.connect(observer_field_updated)
 
         form.addRow('Observer: ', observer_field)
 

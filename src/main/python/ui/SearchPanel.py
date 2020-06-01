@@ -1,5 +1,8 @@
 # SearchPanel.py (vars-localize)
-from ui.EntryTree import ImagedMomentTree, EntryTreeItem
+from PyQt5.QtGui import QColor
+
+from ui.EntryTree import ImagedMomentTree
+from ui.JSONTree import JSONTree
 from ui.Paginator import Paginator
 
 __author__ = "Kevin Barnard"
@@ -17,11 +20,13 @@ Dock widget used to search for concepts and select frame grabs.
 @license: __license__
 '''
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QDockWidget, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QLabel
+from PyQt5.QtWidgets import QDockWidget, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QScrollArea, QTextEdit, QLabel, QSizePolicy, QDialog, QPushButton
 
 from ui.ConceptSearchbar import ConceptSearchbar
 
-from util.requests import concept_count
+from util.requests import get_all_concepts, delete_observation, modify_concept
+
+from ui.EntryTree import EntryTreeItem
 
 
 class SearchPanel(QDockWidget):
@@ -54,21 +59,36 @@ class SearchPanel(QDockWidget):
 
         self.entry_tree = ImagedMomentTree()
         self.entry_tree.currentItemChanged.connect(self.parent().load_entry)
+        self.entry_tree.itemDoubleClicked.connect(self.show_popup)
         self.entry_tree.time_window = 0
         self.time_window.valueChanged.connect(self.entry_tree.set_time_window)
 
         self.paginator = Paginator()
         self.paginator.set_limit(25)
+        self.paginator.left_button.setDisabled(True)
+        self.paginator.right_button.setDisabled(True)
         self.paginator.left_signal.connect(self.load_page)
         self.paginator.right_signal.connect(self.load_page)
+
+        self.association_area = QScrollArea()
+        self.association_area.setWidgetResizable(True)
+        self.association_text = QLabel()
+        self.association_text.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        self.association_area.setWidget(self.association_text)
+        self.association_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.association_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
         self.contents.layout().addWidget(self.top_bar)
         self.contents.layout().addWidget(self.entry_tree, stretch=1)
         self.contents.layout().addWidget(self.paginator)
+        self.contents.layout().addWidget(self.association_area)
+
+        self.observer = ''
 
     def concept_selected(self, concept):
-        self.concept = concept
-        self.load_results()
+        if concept in get_all_concepts():
+            self.concept = concept
+            self.load_results()
 
     def load_results(self):
         self.parent().display_panel.image_view.set_pixmap(None)
@@ -86,3 +106,57 @@ class SearchPanel(QDockWidget):
 
     def select_prev(self):
         self.entry_tree.setCurrentIndex(self.entry_tree.indexAbove(self.entry_tree.currentIndex()))
+
+    def show_popup(self, item: EntryTreeItem, col: int):
+        if item is None or item.metadata['type'] == 'imaged_moment':
+            return
+
+        observation_uuid = item.metadata['uuid']
+
+        editable = observation_uuid in self.entry_tree.editable_uuids
+
+        dialog = QDialog()
+        dialog.setMinimumSize(600, 300)
+        dialog.setLayout(QVBoxLayout())
+        dialog.setWindowTitle('Observation Information')
+        dialog.setWindowFlag(Qt.WindowCloseButtonHint, False)
+
+        json_tree = JSONTree(item.metadata)
+        concept_widget = QWidget()
+        concept_widget.setLayout(QHBoxLayout())
+        delete_button = QPushButton('Delete')
+        delete_button.setStyleSheet('background-color: #ff9696')
+        delete_button.setDisabled(not editable)
+        delete_lock = False
+
+        def do_delete_observation():
+            nonlocal dialog
+            nonlocal delete_lock
+            dialog.close()
+            delete_observation(observation_uuid)
+            delete_lock = True
+            self.parent().display_panel.image_view.set_entry(item.parent())
+            self.parent().display_panel.image_view.reload_moment()
+
+        delete_button.pressed.connect(do_delete_observation)
+
+        dialog.layout().addWidget(json_tree)
+        dialog.layout().addWidget(concept_widget)
+        dialog.layout().addWidget(delete_button)
+
+        concept_field = ConceptSearchbar()
+        concept_field.setText(item.metadata['concept'])
+        concept_field.setDisabled(not editable)
+
+        concept_widget.layout().addWidget(QLabel('Concept:'))
+        concept_widget.layout().addWidget(concept_field)
+
+        concept_before = concept_field.text()
+
+        dialog.setModal(True)
+        dialog.exec_()
+
+        concept_after = concept_field.text()
+        if not delete_lock and concept_after != concept_before:  # Rename the observation
+            modify_concept(observation_uuid, concept_after, self.observer)
+            self.entry_tree.load_imaged_moment_entry(item.parent())

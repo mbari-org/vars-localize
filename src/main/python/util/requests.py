@@ -114,7 +114,7 @@ def check_auth():
         return token
 
 
-def create_observation(video_reference_uuid, concept, observer, timecode=None, elapsed_time=None, recorded_date=None,
+def create_observation(video_reference_uuid, concept, observer, timecode=None, elapsed_time_millis=None, recorded_timestamp=None,
                        retry=True):
     """
     Create an observation. One of timecode, elapsed_time, or recorded_date is required as an index
@@ -122,8 +122,8 @@ def create_observation(video_reference_uuid, concept, observer, timecode=None, e
     :param concept: Concept observed
     :param observer: Observer tag
     :param timecode: Optional timecode of observation
-    :param elapsed_time: Optional elapsed time of observation
-    :param recorded_date: Optional recorded date of observation
+    :param elapsed_time_millis: Optional elapsed time of observation
+    :param recorded_timestamp: Optional recorded timestamp of observation
     :param retry: Retry after authentication failure
     :return: HTTP response JSON if success, else None
     """
@@ -133,16 +133,16 @@ def create_observation(video_reference_uuid, concept, observer, timecode=None, e
         'observer': observer,
     }
 
-    if not (timecode or elapsed_time or recorded_date):
+    if not (timecode or elapsed_time_millis or recorded_timestamp):
         print('No observation index provided!')
         return
 
     if timecode:
         request_data['timecode'] = timecode
-    if elapsed_time:
-        request_data['elapsed_time'] = elapsed_time
-    if recorded_date:
-        request_data['recorded_date'] = recorded_date
+    if elapsed_time_millis:
+        request_data['elapsed_time_millis'] = int(elapsed_time_millis)
+    if recorded_timestamp:
+        request_data['recorded_timestamp'] = recorded_timestamp
 
     token = check_auth()
 
@@ -158,10 +158,36 @@ def create_observation(video_reference_uuid, concept, observer, timecode=None, e
     except Exception as e:
         if retry:
             auth()
-            return create_observation(video_reference_uuid, concept, observer, timecode, elapsed_time, recorded_date,
+            return create_observation(video_reference_uuid, concept, observer, timecode, elapsed_time_millis, recorded_timestamp,
                                       retry=False)
         else:
             print('Observation creation failed.')
+            print(e)
+
+
+def delete_observation(observation_uuid: str, retry=True):
+    """
+    Delete an observation in VARS
+    :param observation_uuid: Observation UUID
+    :param retry: Retry after authentication failure
+    :return: HTTP response JSON if success, else None
+    """
+    token = check_auth()
+
+    try:
+        response = requests.delete(
+            util.utils.get_property('endpoints', 'delete_observation') + '/{}'.format(observation_uuid),
+            headers={
+                'Authorization': 'BEARER {}'.format(token)
+            }
+        )
+        return response
+    except Exception as e:
+        if retry:
+            auth()
+            return delete_observation(observation_uuid, retry=False)
+        else:
+            print('Observation deletion failed.')
             print(e)
 
 
@@ -197,7 +223,6 @@ def create_box(box_json, observation_uuid: str, retry=True):
             return create_box(box_json, observation_uuid, retry=False)
         else:
             print('Box creation failed!')
-            print(response.content)
             print(e)
 
 
@@ -335,7 +360,7 @@ def get_windowed_moments(video_reference_uuids: list, imaged_moment_uuid: str, t
 
 def modify_concept(observation_uuid: str, new_concept: str, observer: str, retry=True):
     """
-    Rename an observation.
+    Rename an observation
     :param observation_uuid: Observation UUID to rename
     :param new_concept: New concept
     :param observer: Observer to update

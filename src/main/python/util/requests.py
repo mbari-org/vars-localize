@@ -113,7 +113,7 @@ def check_auth():
         return token
 
 
-def create_observation(video_reference_uuid, concept, observer, timecode=None, elapsed_time_millis=None, recorded_date=None,
+def create_observation(video_reference_uuid, concept, observer, timecode=None, elapsed_time_millis=None, recorded_timestamp=None,
                        retry=True):
     """
     Create an observation. One of timecode, elapsed_time, or recorded_date is required as an index
@@ -122,7 +122,7 @@ def create_observation(video_reference_uuid, concept, observer, timecode=None, e
     :param observer: Observer tag
     :param timecode: Optional timecode of observation
     :param elapsed_time_millis: Optional elapsed time of observation
-    :param recorded_date: Optional recorded date of observation
+    :param recorded_timestamp: Optional recorded timestamp of observation
     :param retry: Retry after authentication failure
     :return: HTTP response JSON if success, else None
     """
@@ -132,7 +132,7 @@ def create_observation(video_reference_uuid, concept, observer, timecode=None, e
         'observer': observer,
     }
 
-    if not (timecode or elapsed_time_millis or recorded_date):
+    if not (timecode or elapsed_time_millis or recorded_timestamp):
         print('No observation index provided!')
         return
 
@@ -140,8 +140,8 @@ def create_observation(video_reference_uuid, concept, observer, timecode=None, e
         request_data['timecode'] = timecode
     if elapsed_time_millis:
         request_data['elapsed_time_millis'] = int(elapsed_time_millis)
-    if recorded_date:
-        request_data['recorded_date'] = recorded_date
+    if recorded_timestamp:
+        request_data['recorded_timestamp'] = recorded_timestamp
 
     token = check_auth()
 
@@ -157,7 +157,7 @@ def create_observation(video_reference_uuid, concept, observer, timecode=None, e
     except Exception as e:
         if retry:
             auth()
-            return create_observation(video_reference_uuid, concept, observer, timecode, elapsed_time_millis, recorded_date,
+            return create_observation(video_reference_uuid, concept, observer, timecode, elapsed_time_millis, recorded_timestamp,
                                       retry=False)
         else:
             print('Observation creation failed.')

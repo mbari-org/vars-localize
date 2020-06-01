@@ -401,7 +401,7 @@ class ImageView(QGraphicsView):
         if 'elapsed_time_millis' in fields:
             kwargs['elapsed_time_millis'] = self.moment.metadata['elapsed_time_millis']
         if 'recorded_date' in fields:
-            kwargs['recorded_date'] = self.moment.metadata['recorded_date']
+            kwargs['recorded_timestamp'] = self.moment.metadata['recorded_date']
 
         observation = create_observation(  # Call observation creation request
             self.moment.metadata['video_reference_uuid'],

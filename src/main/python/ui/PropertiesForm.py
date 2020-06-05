@@ -39,7 +39,6 @@ class PropertiesForm(QGroupBox):
         self.w_field = QSpinBox()
         self.h_field = QSpinBox()
 
-        self.concept_field.set_callback(self.source.set_label)
         self.x_field.valueChanged.connect(self.source.setX)
         self.y_field.valueChanged.connect(self.source.setY)
         self.w_field.valueChanged.connect(self.source.setWidth)

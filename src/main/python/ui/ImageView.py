@@ -81,8 +81,6 @@ class ImageView(QGraphicsView):
         if self.pixmap_src:  # Image loaded, draw image + relevant components
             self.draw_pixmap(self.pixmap_src)
 
-            self.draw_ancillary_data()
-
             if self.enabled_observations:
                 for uuid, enabled in self.enabled_observations.items():
                     if not enabled:
@@ -212,20 +210,24 @@ class ImageView(QGraphicsView):
         pixmap_item.setPos(self.pixmap_pos)
         return pixmap_item
 
+<<<<<<< Updated upstream
+=======
     def draw_ancillary_data(self):
         """
-        Draw ancillary data on the image
+        Draw ancillary data on the image, if there is any
         :return: None
         """
-        ancillary_data = self.moment.metadata['ancillary_data']
-        depth = ancillary_data['depth_meters']
-        latitude = ancillary_data['latitude']
-        longitude = ancillary_data['longitude']
+        if 'ancillary_data' in self.moment.metadata.keys():
+            ancillary_data = self.moment.metadata['ancillary_data']
+            depth = ancillary_data['depth_meters']
+            latitude = ancillary_data['latitude']
+            longitude = ancillary_data['longitude']
 
-        text_item = self.scene().addText('Depth (m): {:<10.2f} Latitude: {:<10.4f} Longitude: {:<10.4f}'.format(depth, latitude, longitude), QFont('Courier New'))
-        text_item.setDefaultTextColor(QColor(255, 255, 255))
-        text_item.setPos(10, self.height() - text_item.boundingRect().height() - 10)
+            text_item = self.scene().addText('Depth (m): {:<10.2f} Latitude: {:<10.4f} Longitude: {:<10.4f}'.format(depth, latitude, longitude), QFont('Courier New'))
+            text_item.setDefaultTextColor(QColor(255, 255, 255))
+            text_item.setPos(10, self.height() - text_item.boundingRect().height() - 10)
 
+>>>>>>> Stashed changes
     def draw_bounding_box(self, box_src: SourceBoundingBox, manager: BoundingBoxManager):
         """
         Draw a bounding box in the scene, add to box manager
@@ -274,6 +276,7 @@ class ImageView(QGraphicsView):
         self.redraw()
 
         box_json_before = box.source.get_json()
+        box_label_before = box.source.label
 
         dialog = PropertiesDialog(box.source)
         dialog.setup_form(self.pixmap_src, self.redraw)
@@ -283,8 +286,9 @@ class ImageView(QGraphicsView):
         dialog.exec_()
 
         box_json_after = box.source.get_json()
-        if box_json_after != box_json_before:
-            if False:
+        box_label_after = box.source.label
+        if box_json_after != box_json_before or box_label_after != box_label_before:
+            if box_label_after != box_label_before:
                 modify_concept(box.source.observation_uuid, box_label_after, self.observer)  # Update the observation's concept
                 self.observation_map[box.source.observation_uuid].metadata['concept'] = box_label_after
                 self.reload_moment()
@@ -375,8 +379,9 @@ class ImageView(QGraphicsView):
         def update_concept_selected(concept):
             nonlocal concept_selected
             nonlocal submit_button
-            concept_selected = concept
-            submit_button.setEnabled(True)
+            if concept_selected in get_all_concepts():
+                concept_selected = concept
+                submit_button.setEnabled(True)
 
         search.set_callback(update_concept_selected)
 
@@ -398,10 +403,10 @@ class ImageView(QGraphicsView):
         fields = self.moment.metadata.keys()
         if 'timecode' in fields:
             kwargs['timecode'] = self.moment.metadata['timecode']
-        if 'elapsed_time_millis' in fields:
-            kwargs['elapsed_time_millis'] = self.moment.metadata['elapsed_time_millis']
+        if 'elapsed_time' in fields:
+            kwargs['elapsed_time'] = self.moment.metadata['elapsed_time']
         if 'recorded_date' in fields:
-            kwargs['recorded_timestamp'] = self.moment.metadata['recorded_date']
+            kwargs['recorded_date'] = self.moment.metadata['recorded_date']
 
         observation = create_observation(  # Call observation creation request
             self.moment.metadata['video_reference_uuid'],
@@ -409,8 +414,6 @@ class ImageView(QGraphicsView):
             self.observer,
             **kwargs
         )
-
-        self.moment.treeWidget().editable_uuids.add(observation['observation_uuid'])
 
         self.reload_moment()
 

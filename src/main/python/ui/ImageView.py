@@ -210,8 +210,6 @@ class ImageView(QGraphicsView):
         pixmap_item.setPos(self.pixmap_pos)
         return pixmap_item
 
-<<<<<<< Updated upstream
-=======
     def draw_ancillary_data(self):
         """
         Draw ancillary data on the image, if there is any
@@ -227,7 +225,6 @@ class ImageView(QGraphicsView):
             text_item.setDefaultTextColor(QColor(255, 255, 255))
             text_item.setPos(10, self.height() - text_item.boundingRect().height() - 10)
 
->>>>>>> Stashed changes
     def draw_bounding_box(self, box_src: SourceBoundingBox, manager: BoundingBoxManager):
         """
         Draw a bounding box in the scene, add to box manager

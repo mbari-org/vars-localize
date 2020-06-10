@@ -23,6 +23,38 @@ from PyQt5.QtGui import QPixmap
 concepts = None
 
 
+def auth_retry(fail_msg):
+    """
+    Decorator for REST calls with auth retry
+    :param fail_msg: Message to show on fail
+    :return: Wrapped function
+    """
+    def wrap_func(func):
+        def retry_func(*args, retry=True, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                if retry:
+                    auth()
+                    return retry_func(*args, retry=False, **kwargs)
+                else:
+                    util.utils.log(fail_msg, level=2)
+                    util.utils.log(e, level=2)
+        return retry_func
+    return wrap_func
+
+
+def check_connection():
+    """
+    Check the connection by sending a GET request to the prod_site endpoint
+    :return: Connection OK
+    """
+    r = requests.get(
+        util.utils.get_property('endpoints', 'prod_site')
+    )
+    return r.status_code == 200
+
+
 def get_imaged_moment_uuids(concept: str):
     """
     Get all imaged moment uuids with valid .png images for a specific concept
@@ -74,8 +106,8 @@ def concept_count(concept: str):
         response_json = response.json()
         return int(response_json['count'])
     except Exception as e:
-        print('Concept count failed.')
-        print(e)
+        util.utils.log('Concept count failed.', level=2)
+        util.utils.log(e, level=2)
         return 0
 
 
@@ -94,8 +126,8 @@ def auth():
         util.utils.cache_token(response.content.decode())
         return response.json()['access_token']
     except Exception as e:
-        print('Authentication failed.')
-        print(e)
+        util.utils.log('Authentication failed.', level=2)
+        util.utils.log(e, level=2)
         return None
 
 
@@ -108,7 +140,7 @@ def check_auth():
     if not token:
         token = auth()
     if not token:
-        raise ValueError('Bad API key! Check it in config/api_key.txt')
+        raise ValueError('Bad API key! Check it in src/main/resources/base/config/api_key.txt')
     else:
         return token
 
@@ -133,7 +165,7 @@ def create_observation(video_reference_uuid, concept, observer, timecode=None, e
     }
 
     if not (timecode or elapsed_time_millis or recorded_timestamp):
-        print('No observation index provided!')
+        util.utils.log('No observation index provided. Observation creation failed.', level=2)
         return
 
     if timecode:
@@ -186,8 +218,8 @@ def delete_observation(observation_uuid: str, retry=True):
             auth()
             return delete_observation(observation_uuid, retry=False)
         else:
-            print('Observation deletion failed.')
-            print(e)
+            util.utils.log('Observation deletion failed.', level=2)
+            util.utils.log(e, level=2)
 
 
 def create_box(box_json, observation_uuid: str, retry=True):
@@ -221,8 +253,8 @@ def create_box(box_json, observation_uuid: str, retry=True):
             auth()
             return create_box(box_json, observation_uuid, retry=False)
         else:
-            print('Box creation failed!')
-            print(e)
+            util.utils.log('Box creation failed.', level=2)
+            util.utils.log(e, level=2)
 
 
 def modify_box(box_json, observation_uuid: str, association_uuid: str, retry=True):
@@ -257,8 +289,8 @@ def modify_box(box_json, observation_uuid: str, association_uuid: str, retry=Tru
             auth()
             return modify_box(box_json, observation_uuid, association_uuid, retry=False)
         else:
-            print('Box modification failed!')
-            print(e)
+            util.utils.log('Box modification failed.', level=2)
+            util.utils.log(e, level=2)
 
 
 def delete_box(association_uuid: str, retry=True):
@@ -283,8 +315,8 @@ def delete_box(association_uuid: str, retry=True):
             auth()
             return delete_box(association_uuid, retry=False)
         else:
-            print('Box deletion failed!')
-            print(e)
+            util.utils.log('Box deletion failed.', level=2)
+            util.utils.log(e, level=2)
 
 
 def fetch_image(url: str) -> QPixmap:
@@ -298,8 +330,7 @@ def fetch_image(url: str) -> QPixmap:
         image_contents = requests.get(url).content
         pixmap.loadFromData(image_contents)
     except Exception as e:
-        print('Error fetching image at {}'.format(url))
-        print(e)
+        util.utils.log('Could not fetch image at {}'.format(url), level=1)
         pixmap = None
     return pixmap
 
@@ -387,5 +418,5 @@ def modify_concept(observation_uuid: str, new_concept: str, observer: str, retry
             auth()
             return modify_concept(observation_uuid, new_concept, observer, retry=False)
         else:
-            print('Box modification failed!')
-            print(e)
+            util.utils.log('Observation renaming failed.', level=2)
+            util.utils.log(e, level=2)

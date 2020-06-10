@@ -20,13 +20,15 @@ Application Window.
 '''
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QCloseEvent, QIcon
-from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QDialog, QVBoxLayout, QFormLayout, QLineEdit, QPushButton, QCompleter
+from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QDialog, QVBoxLayout, QFormLayout, QLineEdit, \
+    QPushButton, QCompleter, QMessageBox
 
 from ui.ConceptEntry import ConceptEntry
 from ui.DisplayPanel import DisplayPanel
 from ui.SearchPanel import SearchPanel
 
-from util.requests import get_all_users
+from util.requests import check_connection, get_all_users
+from util.utils import log
 
 
 class AppWindow(QMainWindow):
@@ -36,6 +38,13 @@ class AppWindow(QMainWindow):
 
         self.setWindowTitle('VARS Anchor')
         self.setWindowIcon(QIcon(appctxt.get_resource('images/Icon.ico')))
+
+        if not check_connection():
+            log('You are not connected to M3. Check your internet connection and/or VPN.', level=2)
+            QMessageBox.critical(self,
+                                 'No connection to M3',
+                                 'You are not connected to M3. Check your internet connection and/or VPN.')
+            exit(1)
 
         self.central_container = QWidget()
         self.central_container.setLayout(QHBoxLayout())
@@ -52,7 +61,7 @@ class AppWindow(QMainWindow):
 
         self.login()
         if not self.observer:
-            print('You must login to use this tool.')
+            log('You must login to use this tool.', level=2)
             exit(1)
 
         self.display_panel.image_view.observer = self.observer

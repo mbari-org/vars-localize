@@ -22,20 +22,42 @@ Utility functions for the application.
 @license: __license__
 '''
 
-appctxt = None
-config = None
+APP_CONTEXT = None
+GLOBAL_CONFIG = None
+LOG_LEVELS = {0: 'INFO', 1: 'WARNING', 2: 'ERROR'}
 
 
-def set_appctxt(appctxt_set):
-    global appctxt
-    appctxt = appctxt_set
+def log(message, level=0):
+    """
+    Log a message to stdout
+    :param message: Message to log
+    :param level: Log level (see LOG_LEVELS)
+    :return: None
+    """
+    if level not in LOG_LEVELS:
+        raise ValueError('Bad log level.')
+    print('[{}] {}'.format(LOG_LEVELS[level], message))
 
 
-def get_appctxt():
-    if appctxt:
-        return appctxt
+def set_app_context(app_context):
+    """
+    Set the reference FBS application context (should be done only once)
+    :param app_context: Application context
+    :return: None
+    """
+    global APP_CONTEXT
+    APP_CONTEXT = app_context
+
+
+def get_app_context():
+    """
+    Get the application context
+    :return: FBS application context
+    """
+    if APP_CONTEXT:
+        return APP_CONTEXT
     else:
-        print('FATAL APP CONTEXT ERROR, EXITING')
+        log('Fatal application context error, exiting.', level=2)
         exit(1)
 
 
@@ -64,13 +86,13 @@ def get_property(category, prop):
     :param prop: Property to fetch
     :return: Requested property value if exists, else None
     """
-    global config
-    if not config:
-        config = configparser.ConfigParser()
-        config.read(get_appctxt().get_resource('config/config.ini'))
-    if category in config:
-        if prop in config[category]:
-            return config[category][prop]
+    global GLOBAL_CONFIG
+    if not GLOBAL_CONFIG:
+        GLOBAL_CONFIG = configparser.ConfigParser()
+        GLOBAL_CONFIG.read(get_app_context().get_resource('config/config.ini'))
+    if category in GLOBAL_CONFIG:
+        if prop in GLOBAL_CONFIG[category]:
+            return GLOBAL_CONFIG[category][prop]
     return None
 
 
@@ -79,7 +101,7 @@ def get_api_key():
     Returns the API key for authorization from 'config/api_key.txt'
     :return: API key string
     """
-    api_key_file = open(get_appctxt().get_resource('config/api_key.txt'), 'r')
+    api_key_file = open(get_app_context().get_resource('config/api_key.txt'), 'r')
     key = api_key_file.readlines()[0].strip()
     api_key_file.close()
     return key
@@ -104,7 +126,6 @@ def get_token():
     """
     if not os.path.exists('cache/token.json'):
         return None
-    # with open(get_appctxt().get_resource('cache/token.json'), 'r') as f:
     with open('cache/token.json', 'r') as f:
         access_token = json.loads(f.read())['access_token']
         return access_token
@@ -150,7 +171,7 @@ def get_observer_confidence(observer: str):
     :param observer: Observer to lookup
     :return: Confidence value (any)
     """
-    with open(get_appctxt().get_resource('config/strength_map.json'), 'r') as f:
+    with open(get_app_context().get_resource('config/strength_map.json'), 'r') as f:
         json_obj = json.load(f)
         for conf_rank in json_obj.keys():
             if conf_rank != 'default' and observer in json_obj[conf_rank]:

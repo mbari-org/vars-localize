@@ -38,11 +38,11 @@ class Paginator(QWidget):
         self.nav_label = QLabel()
 
         self.left_button = QPushButton()
-        self.left_button.setIcon(QIcon(util.utils.get_appctxt().get_resource('images/arrow_left.png')))
+        self.left_button.setIcon(QIcon(util.utils.get_app_context().get_resource('images/arrow_left.png')))
         self.left_button.pressed.connect(self.left_press)
 
         self.right_button = QPushButton()
-        self.right_button.setIcon(QIcon(util.utils.get_appctxt().get_resource('images/arrow_right.png')))
+        self.right_button.setIcon(QIcon(util.utils.get_app_context().get_resource('images/arrow_right.png')))
         self.right_button.pressed.connect(self.right_press)
 
         self.layout().addWidget(self.nav_label, stretch=1)

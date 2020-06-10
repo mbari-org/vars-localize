@@ -373,9 +373,8 @@ class ImageView(QGraphicsView):
         def update_concept_selected(concept):
             nonlocal concept_selected
             nonlocal submit_button
-            if concept_selected in get_all_concepts():
-                concept_selected = concept
-                submit_button.setEnabled(True)
+            concept_selected = concept
+            submit_button.setEnabled(True)
 
         search.set_callback(update_concept_selected)
 
@@ -397,10 +396,10 @@ class ImageView(QGraphicsView):
         fields = self.moment.metadata.keys()
         if 'timecode' in fields:
             kwargs['timecode'] = self.moment.metadata['timecode']
-        if 'elapsed_time' in fields:
-            kwargs['elapsed_time'] = self.moment.metadata['elapsed_time']
+        if 'elapsed_time_millis' in fields:
+            kwargs['elapsed_time_millis'] = self.moment.metadata['elapsed_time_millis']
         if 'recorded_date' in fields:
-            kwargs['recorded_date'] = self.moment.metadata['recorded_date']
+            kwargs['recorded_timestamp'] = self.moment.metadata['recorded_date']
 
         observation = create_observation(  # Call observation creation request
             self.moment.metadata['video_reference_uuid'],
@@ -408,6 +407,8 @@ class ImageView(QGraphicsView):
             self.observer,
             **kwargs
         )
+
+        self.moment.treeWidget().editable_uuids.add(observation['observation_uuid'])
 
         self.reload_moment()
 

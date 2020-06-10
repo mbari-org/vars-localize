@@ -81,6 +81,8 @@ class ImageView(QGraphicsView):
         if self.pixmap_src:  # Image loaded, draw image + relevant components
             self.draw_pixmap(self.pixmap_src)
 
+            self.draw_ancillary_data()
+
             if self.enabled_observations:
                 for uuid, enabled in self.enabled_observations.items():
                     if not enabled:
@@ -283,12 +285,7 @@ class ImageView(QGraphicsView):
         dialog.exec_()
 
         box_json_after = box.source.get_json()
-        box_label_after = box.source.label
-        if box_json_after != box_json_before or box_label_after != box_label_before:
-            if box_label_after != box_label_before:
-                modify_concept(box.source.observation_uuid, box_label_after, self.observer)  # Update the observation's concept
-                self.observation_map[box.source.observation_uuid].metadata['concept'] = box_label_after
-                self.reload_moment()
+        if box_json_after != box_json_before:
             box.source.observer = self.observer  # Update observer field
             box.source.strength = utils.get_observer_confidence(box.source.observer)  # Update strength field
             modify_box(box_json_after, box.source.observation_uuid, box.source.association_uuid)  # Call modification request

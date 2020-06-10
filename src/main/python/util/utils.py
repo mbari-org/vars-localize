@@ -104,6 +104,7 @@ def get_token():
     """
     if not os.path.exists('cache/token.json'):
         return None
+    # with open(get_appctxt().get_resource('cache/token.json'), 'r') as f:
     with open('cache/token.json', 'r') as f:
         access_token = json.loads(f.read())['access_token']
         return access_token

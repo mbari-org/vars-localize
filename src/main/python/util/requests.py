@@ -148,17 +148,17 @@ def check_auth():
         return token
 
 
-def create_observation(video_reference_uuid, concept, observer, timecode=None, elapsed_time_millis=None, recorded_timestamp=None,
-                       retry=True):
+@auth_retry('Observation creation failed.')
+def create_observation(video_reference_uuid, concept, observer,
+                       timecode=None, elapsed_time_millis=None, recorded_timestamp=None):
     """
-    Create an observation. One of timecode, elapsed_time, or recorded_date is required as an index
+    Create an observation. One of timecode, elapsed_time, or recorded_timestamp is required as an index
     :param video_reference_uuid: Video reference UUID
     :param concept: Concept observed
     :param observer: Observer tag
     :param timecode: Optional timecode of observation
     :param elapsed_time_millis: Optional elapsed time of observation
     :param recorded_timestamp: Optional recorded timestamp of observation
-    :param retry: Retry after authentication failure
     :return: HTTP response JSON if success, else None
     """
     request_data = {
@@ -180,57 +180,40 @@ def create_observation(video_reference_uuid, concept, observer, timecode=None, e
 
     token = check_auth()
 
-    try:
-        response = requests.post(
-            util.utils.get_property('endpoints', 'observation'),
-            data=request_data,
-            headers={
-                'Authorization': 'BEARER {}'.format(token)
-            }
-        )
-        return response.json()
-    except Exception as e:
-        if retry:
-            auth()
-            return create_observation(video_reference_uuid, concept, observer, timecode, elapsed_time_millis, recorded_timestamp,
-                                      retry=False)
-        else:
-            print('Observation creation failed.')
-            print(e)
+    response = requests.post(
+        util.utils.get_property('endpoints', 'observation'),
+        data=request_data,
+        headers={
+            'Authorization': 'BEARER {}'.format(token)
+        }
+    )
+    return response.json()
 
 
-def delete_observation(observation_uuid: str, retry=True):
+@auth_retry('Observation deletion failed.')
+def delete_observation(observation_uuid: str):
     """
     Delete an observation in VARS
     :param observation_uuid: Observation UUID
-    :param retry: Retry after authentication failure
     :return: HTTP response JSON if success, else None
     """
     token = check_auth()
 
-    try:
-        response = requests.delete(
-            util.utils.get_property('endpoints', 'delete_observation') + '/{}'.format(observation_uuid),
-            headers={
-                'Authorization': 'BEARER {}'.format(token)
-            }
-        )
-        return response
-    except Exception as e:
-        if retry:
-            auth()
-            return delete_observation(observation_uuid, retry=False)
-        else:
-            util.utils.log('Observation deletion failed.', level=2)
-            util.utils.log(e, level=2)
+    response = requests.delete(
+        util.utils.get_property('endpoints', 'delete_observation') + '/{}'.format(observation_uuid),
+        headers={
+            'Authorization': 'BEARER {}'.format(token)
+        }
+    )
+    return response
 
 
-def create_box(box_json, observation_uuid: str, retry=True):
+@auth_retry('Box creation failed.')
+def create_box(box_json, observation_uuid: str):
     """
     Creates an association for a box in VARS
     :param box_json: JSON of bounding box data
     :param observation_uuid: Observation UUID
-    :param retry: Retry after authentication failure
     :return: HTTP response JSON if success, else None
     """
     request_data = {
@@ -242,24 +225,17 @@ def create_box(box_json, observation_uuid: str, retry=True):
 
     token = check_auth()
 
-    try:
-        response = requests.post(
-            util.utils.get_property('endpoints', 'assoc'),
-            data=request_data,
-            headers={
-                'Authorization': 'BEARER {}'.format(token)
-            }
-        )
-        return response.json()
-    except Exception as e:
-        if retry:
-            auth()
-            return create_box(box_json, observation_uuid, retry=False)
-        else:
-            util.utils.log('Box creation failed.', level=2)
-            util.utils.log(e, level=2)
+    response = requests.post(
+        util.utils.get_property('endpoints', 'assoc'),
+        data=request_data,
+        headers={
+            'Authorization': 'BEARER {}'.format(token)
+        }
+    )
+    return response.json()
 
 
+@auth_retry('Box modification failed.')
 def modify_box(box_json, observation_uuid: str, association_uuid: str, retry=True):
     """
     Modifies a box with a given association_uuid
@@ -278,24 +254,17 @@ def modify_box(box_json, observation_uuid: str, association_uuid: str, retry=Tru
         'mime_type': 'application/json'
     }
 
-    try:
-        response = requests.put(
-            util.utils.get_property('endpoints', 'assoc') + '/{}'.format(association_uuid),
-            data=request_data,
-            headers={
-                'Authorization': 'BEARER {}'.format(token)
-            }
-        )
-        return response.json()
-    except Exception as e:
-        if retry:
-            auth()
-            return modify_box(box_json, observation_uuid, association_uuid, retry=False)
-        else:
-            util.utils.log('Box modification failed.', level=2)
-            util.utils.log(e, level=2)
+    response = requests.put(
+        util.utils.get_property('endpoints', 'assoc') + '/{}'.format(association_uuid),
+        data=request_data,
+        headers={
+            'Authorization': 'BEARER {}'.format(token)
+        }
+    )
+    return response.json()
 
 
+@auth_retry('Box deletion failed.')
 def delete_box(association_uuid: str, retry=True):
     """
     Deletes a box with a given association_uuid
@@ -305,21 +274,13 @@ def delete_box(association_uuid: str, retry=True):
     """
     token = check_auth()
 
-    try:
-        response = requests.delete(
-            util.utils.get_property('endpoints', 'assoc') + '/{}'.format(association_uuid),
-            headers={
-                'Authorization': 'BEARER {}'.format(token)
-            }
-        )
-        return response
-    except Exception as e:
-        if retry:
-            auth()
-            return delete_box(association_uuid, retry=False)
-        else:
-            util.utils.log('Box deletion failed.', level=2)
-            util.utils.log(e, level=2)
+    response = requests.delete(
+        util.utils.get_property('endpoints', 'assoc') + '/{}'.format(association_uuid),
+        headers={
+            'Authorization': 'BEARER {}'.format(token)
+        }
+    )
+    return response
 
 
 def fetch_image(url: str) -> QPixmap:
@@ -391,6 +352,7 @@ def get_windowed_moments(video_reference_uuids: list, imaged_moment_uuid: str, t
     return response_json
 
 
+@auth_retry('Observation renaming failed.')
 def modify_concept(observation_uuid: str, new_concept: str, observer: str, retry=True):
     """
     Rename an observation
@@ -407,19 +369,11 @@ def modify_concept(observation_uuid: str, new_concept: str, observer: str, retry
         'observer': observer
     }
 
-    try:
-        response = requests.put(
-            util.utils.get_property('endpoints', 'observation') + '/{}'.format(observation_uuid),
-            data=request_data,
-            headers={
-                'Authorization': 'BEARER {}'.format(token)
-            }
-        )
-        return response.json()
-    except Exception as e:
-        if retry:
-            auth()
-            return modify_concept(observation_uuid, new_concept, observer, retry=False)
-        else:
-            util.utils.log('Observation renaming failed.', level=2)
-            util.utils.log(e, level=2)
+    response = requests.put(
+        util.utils.get_property('endpoints', 'observation') + '/{}'.format(observation_uuid),
+        data=request_data,
+        headers={
+            'Authorization': 'BEARER {}'.format(token)
+        }
+    )
+    return response.json()

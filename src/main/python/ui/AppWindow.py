@@ -39,12 +39,14 @@ class AppWindow(QMainWindow):
         self.setWindowTitle('VARS Anchor')
         self.setWindowIcon(QIcon(appctxt.get_resource('images/Icon.ico')))
 
+        log('Checking connection to M3...')
         if not check_connection():
             log('You are not connected to M3. Check your internet connection and/or VPN.', level=2)
             QMessageBox.critical(self,
                                  'No connection to M3',
                                  'You are not connected to M3. Check your internet connection and/or VPN.')
             exit(1)
+        log('Connected.')
 
         self.central_container = QWidget()
         self.central_container.setLayout(QHBoxLayout())

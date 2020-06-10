@@ -49,10 +49,13 @@ def check_connection():
     Check the connection by sending a GET request to the prod_site endpoint
     :return: Connection OK
     """
-    r = requests.get(
-        util.utils.get_property('endpoints', 'prod_site')
-    )
-    return r.status_code == 200
+    try:
+        r = requests.get(
+            util.utils.get_property('endpoints', 'prod_site'), timeout=3
+        )
+        return r.status_code == 200
+    except:
+        return False
 
 
 def get_imaged_moment_uuids(concept: str):

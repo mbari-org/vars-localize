@@ -53,7 +53,7 @@ class SourceBoundingBox(QRect):
             'height': self.height(),
             'observer': self.observer,
             'strength': self.strength,
-            'generator': 'vars-localize'
+            'generator': 'vars-localize',
             'image_reference_uuid': self.image_reference_uuid
         }
 

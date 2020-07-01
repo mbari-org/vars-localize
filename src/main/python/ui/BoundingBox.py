@@ -54,6 +54,7 @@ class SourceBoundingBox(QRect):
             'observer': self.observer,
             'strength': self.strength,
             'generator': 'vars-localize',
+            'project': 'FathomNet',
             'image_reference_uuid': self.image_reference_uuid
         }
 

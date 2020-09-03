@@ -303,16 +303,13 @@ def fetch_image(url: str) -> QPixmap:
 def get_all_users() -> list:
     """
     Get a list of all available VARS users
-    :return: list of all VARS usernames
+    :return: list of all VARS users
     """
     response = requests.get(
         util.utils.get_property('endpoints', 'users')
     )
     response_json = response.json()
-    usernames = []
-    for user_struct in response_json:
-        usernames.append(user_struct['username'])
-    return usernames
+    return response_json
 
 
 def get_other_videos(video_reference_uuid: str) -> list:

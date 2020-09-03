@@ -58,6 +58,7 @@ class AppWindow(QMainWindow):
         self.central_container.layout().addWidget(self.display_panel)
 
         self.observer = None
+        self.observer_role = None
 
         self.setCentralWidget(self.central_container)
 
@@ -98,7 +99,8 @@ class AppWindow(QMainWindow):
         form_widget.setLayout(form)
         observer_field = QLineEdit()
         all_valid_users = get_all_users()
-        observer_completer = QCompleter(all_valid_users)
+        users_dict = {user_data['username']: user_data for user_data in all_valid_users}
+        observer_completer = QCompleter(users_dict.keys())
         observer_completer.setCaseSensitivity(Qt.CaseInsensitive)
         observer_field.setCompleter(observer_completer)
 
@@ -108,8 +110,9 @@ class AppWindow(QMainWindow):
 
         def observer_field_updated(text):
             nonlocal login_button
-            if text in all_valid_users:
+            if text in users_dict:
                 self.observer = text
+                self.observer_role = users_dict[text]['role']
                 login_button.setEnabled(True)
             else:
                 login_button.setEnabled(False)

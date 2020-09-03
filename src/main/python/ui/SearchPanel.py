@@ -114,6 +114,7 @@ class SearchPanel(QDockWidget):
         observation_uuid = item.metadata['uuid']
 
         editable = observation_uuid in self.entry_tree.editable_uuids
+        admin_mode = self.parent().admin_mode
 
         dialog = QDialog()
         dialog.setMinimumSize(600, 300)
@@ -126,7 +127,7 @@ class SearchPanel(QDockWidget):
         concept_widget.setLayout(QHBoxLayout())
         delete_button = QPushButton('Delete')
         delete_button.setStyleSheet('background-color: #ff9696')
-        delete_button.setDisabled(not editable)
+        delete_button.setDisabled(not editable and not admin_mode)
         delete_lock = False
 
         def do_delete_observation():
@@ -146,7 +147,7 @@ class SearchPanel(QDockWidget):
 
         concept_field = ConceptSearchbar()
         concept_field.setText(item.metadata['concept'])
-        concept_field.setDisabled(not editable)
+        concept_field.setDisabled(not editable and not admin_mode)
 
         concept_widget.layout().addWidget(QLabel('Concept:'))
         concept_widget.layout().addWidget(concept_field)

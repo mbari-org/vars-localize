@@ -200,7 +200,7 @@ class ImageView(QGraphicsView):
         :param pixmap: Pixmap object to draw
         :return: None
         """
-        if not pixmap:
+        if not pixmap or pixmap.isNull():
             return
         scaled_pixmap = pixmap.scaled(self.width(), self.height(), Qt.KeepAspectRatio)
         self.pixmap_scalar = scaled_pixmap.width() / pixmap.width()
@@ -223,7 +223,17 @@ class ImageView(QGraphicsView):
             latitude = ancillary_data['latitude']
             longitude = ancillary_data['longitude']
 
-            text_item = self.scene().addText('Depth (m): {:<10.2f} Latitude: {:<10.4f} Longitude: {:<10.4f}'.format(depth, latitude, longitude), QFont('Courier New'))
+            text_dict = {
+                'Depth (m): {:<10.2f}': depth,
+                'Latitude: {:<10.3f}': latitude,
+                'Longitude: {:<10.3f}': longitude
+            }
+
+            if 'recorded_date' in self.moment.metadata.keys():
+                text_dict['Recorded: {}'] = self.moment.metadata['recorded_date'].replace('T', ' ').replace('Z', '')
+            
+            text_str = ' '.join(k.format(v) for k, v in text_dict.items())
+            text_item = self.scene().addText(text_str, QFont('Courier New'))
             text_item.setDefaultTextColor(QColor(255, 255, 255))
             text_item.setPos(10, self.height() - text_item.boundingRect().height() - 10)
 

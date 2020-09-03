@@ -21,7 +21,7 @@ Application Window.
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QCloseEvent, QIcon
 from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QDialog, QVBoxLayout, QFormLayout, QLineEdit, \
-    QPushButton, QCompleter, QMessageBox
+    QPushButton, QCompleter, QMessageBox, QAction
 
 from ui.ConceptEntry import ConceptEntry
 from ui.DisplayPanel import DisplayPanel
@@ -59,6 +59,7 @@ class AppWindow(QMainWindow):
 
         self.observer = None
         self.observer_role = None
+        self.admin_mode = False
 
         self.setCentralWidget(self.central_container)
 
@@ -125,6 +126,24 @@ class AppWindow(QMainWindow):
         login_dialog.layout().addWidget(login_button)
 
         login_dialog.exec_()
+
+        if self.observer_role in ('Maint', 'Admin'):
+            self.add_admin_menu()
+
+    def add_admin_menu(self):
+        """
+        Add the admin menu for observation modification/deletion
+        """
+        main_menu = self.menuBar()
+        options_menu = main_menu.addMenu('&Options')
+
+        admin_mode_action = QAction('Admin Mode', options_menu, checkable=True)
+
+        def set_admin_mode(val):
+            self.admin_mode = val
+
+        admin_mode_action.toggled.connect(set_admin_mode)
+        options_menu.addAction(admin_mode_action)
 
     def closeEvent(self, a0: QCloseEvent) -> None:
         """

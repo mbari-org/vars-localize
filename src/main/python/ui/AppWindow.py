@@ -140,6 +140,8 @@ class AppWindow(QMainWindow):
         admin_mode_action = QAction('Admin Mode', options_menu, checkable=True)
 
         def set_admin_mode(val):
+            if val:
+                QMessageBox.warning(self, 'Entering Admin Mode', 'WARNING: You are now entering administrator mode. This mode allows modification and deletion of observations within VARS.')
             self.admin_mode = val
 
         admin_mode_action.toggled.connect(set_admin_mode)

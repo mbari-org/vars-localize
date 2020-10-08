@@ -70,6 +70,7 @@ class SearchPanel(QDockWidget):
         self.paginator.right_button.setDisabled(True)
         self.paginator.left_signal.connect(self.load_page)
         self.paginator.right_signal.connect(self.load_page)
+        self.paginator.jump_signal.connect(self.load_page)
 
         self.association_area = QScrollArea()
         self.association_area.setWidgetResizable(True)

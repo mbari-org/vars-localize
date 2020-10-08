@@ -1,7 +1,8 @@
 # Paginator.py (vars-localize)
+from PyQt5 import QtGui
 from PyQt5.QtCore import pyqtSignal, Qt
 from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QInputDialog
 
 import util.utils
 
@@ -25,6 +26,7 @@ class Paginator(QWidget):
 
     left_signal = pyqtSignal()
     right_signal = pyqtSignal()
+    jump_signal = pyqtSignal()
 
     def __init__(self, parent=None):
         super(Paginator, self).__init__(parent)
@@ -89,3 +91,12 @@ class Paginator(QWidget):
     def set_count(self, count):
         self.count = count
         self.update_nav()
+
+    def mouseDoubleClickEvent(self, a0: QtGui.QMouseEvent) -> None:
+        if not self.left_button.isEnabled() and not self.right_button.isEnabled():
+            return
+
+        imaged_moment_desired, ok = QInputDialog.getInt(self, 'Jump to imaged moment', 'Jump to imaged moment:')
+        if ok and 0 < imaged_moment_desired <= self.count:
+            self.set_offset(imaged_moment_desired - 1)
+            self.jump_signal.emit()

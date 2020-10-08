@@ -168,3 +168,5 @@ class SearchPanel(QDockWidget):
         if not delete_lock and concept_after != concept_before:  # Rename the observation
             modify_concept(observation_uuid, concept_after, self.observer)
             self.entry_tree.load_imaged_moment_entry(item.parent())
+            self.parent().display_panel.image_view.set_entry(item.parent())
+            self.parent().display_panel.image_view.reload_moment()

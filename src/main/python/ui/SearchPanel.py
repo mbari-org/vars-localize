@@ -20,7 +20,8 @@ Dock widget used to search for concepts and select frame grabs.
 @license: __license__
 '''
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QDockWidget, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QScrollArea, QTextEdit, QLabel, QSizePolicy, QDialog, QPushButton
+from PyQt5.QtWidgets import QDockWidget, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QScrollArea, QTextEdit, QLabel, \
+    QSizePolicy, QDialog, QPushButton, QDialogButtonBox
 
 from ui.ConceptSearchbar import ConceptSearchbar
 
@@ -130,6 +131,10 @@ class SearchPanel(QDockWidget):
         delete_button.setDisabled(not editable and not admin_mode)
         delete_lock = False
 
+        button_box = QDialogButtonBox(QDialogButtonBox.Save)
+        button_box.setStyleSheet('background-color: lightgreen')
+        button_box.accepted.connect(dialog.accept)
+
         def do_delete_observation():
             nonlocal dialog
             nonlocal delete_lock
@@ -144,6 +149,7 @@ class SearchPanel(QDockWidget):
         dialog.layout().addWidget(json_tree)
         dialog.layout().addWidget(concept_widget)
         dialog.layout().addWidget(delete_button)
+        dialog.layout().addWidget(button_box)
 
         concept_field = ConceptSearchbar()
         concept_field.setText(item.metadata['concept'])

@@ -1,7 +1,10 @@
 # EntryTree.py (vars-localize)
-from PyQt5.QtGui import QFont, QBrush, QColor
-from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem
-from util.requests import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments
+from PyQt5 import QtCore
+from PyQt5.QtGui import QFont, QBrush, QColor, QKeyEvent
+from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QAbstractItemView, QDialog, QMessageBox
+
+from util.requests import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments, \
+    delete_observation
 from util.utils import extract_bounding_boxes
 
 __author__ = "Kevin Barnard"
@@ -121,6 +124,8 @@ class ImagedMomentTree(EntryTree):
         self.time_window = None
         self.editable_uuids = set()
 
+        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
+
         self.currentItemChanged.connect(self.item_changed)
 
     def set_time_window(self, value: int):
@@ -224,3 +229,20 @@ class ImagedMomentTree(EntryTree):
             associations = current.metadata['associations']
             assoc_lines = ['{} | {} | {}'.format(assoc['link_name'], assoc['to_concept'], assoc['link_value']) for assoc in associations if assoc['link_name'] != 'bounding box']
             self.parent().parent().association_text.setText('\n'.join(assoc_lines))
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if self.parent().parent().parent().admin_mode and event.key() == QtCore.Qt.Key_Delete:
+            observations_to_delete = [el for el in self.selectedItems() if el.metadata['type'] == 'observation']
+            if not observations_to_delete:  # Ensure at least one observation selected
+                return
+
+            observation_uuids = [obs.metadata['uuid'] for obs in observations_to_delete]
+
+            # Show confirmation dialog
+            res = QMessageBox.warning(self, 'Confirm Observation Bulk Delete',
+                                      'Are you sure you want to delete the following observation(s)?\n\t' + '\n\t'.join(observation_uuids),
+                                      buttons=QMessageBox.Yes | QMessageBox.Cancel)
+            if res == QMessageBox.Yes:  # Do deletion and reload imaged moment
+                for observation_uuid in observation_uuids:
+                    delete_observation(observation_uuid)
+                self.parent().parent().parent().display_panel.image_view.reload_moment()

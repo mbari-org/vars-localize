@@ -4,7 +4,7 @@ from ui.EntryTree import EntryTreeItem, update_imaged_moment_entry
 from PyQt5.QtCore import Qt, QPoint, QPointF, QRectF, QLineF
 from PyQt5.QtGui import QResizeEvent, QMouseEvent, QPixmap, QColor, QKeyEvent, QPen, QFont
 from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QDialog, QVBoxLayout, QPushButton, QInputDialog, QFormLayout, \
-    QDialogButtonBox
+    QDialogButtonBox, QMessageBox
 
 from ui.BoundingBox import BoundingBoxManager, GraphicsBoundingBox, SourceBoundingBox
 from ui.PropertiesDialog import PropertiesDialog
@@ -458,6 +458,14 @@ class ImageView(QGraphicsView):
         box.association_uuid = response_json['uuid']
         update_imaged_moment_entry(self.moment)  # Update tree
 
+    def reset_mouse(self):
+        self.pt_1 = None
+        self.pt_2 = None
+        self.hov_pt_1 = None
+        self.resize_offset = None
+        self.resize_type = None
+        self.redraw()
+
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self.pixmap_src:
             new_rect = self.calc_drag_rect()
@@ -474,10 +482,18 @@ class ImageView(QGraphicsView):
                 concept = self.observation_map[self.observation_uuid].metadata['concept'] if self.observation_uuid else ''
                 observer = self.observer
 
+                acceptable_parts = ['self'] + get_all_parts()
                 part, part_accepted = QInputDialog.getItem(self, 'Part Selection', 'Select a part',
-                                                           ['self'] + get_all_parts(),
+                                                           acceptable_parts,
                                                            current=0)
                 if not part_accepted:
+                    self.reset_mouse()
+                    return
+
+                if part not in acceptable_parts:
+                    QMessageBox.critical(self, 'Error: Bad Part',
+                                         'Bad concept part: "{}". Localization not created.'.format(part))
+                    self.reset_mouse()
                     return
 
                 new_src_box = SourceBoundingBox(
@@ -493,12 +509,7 @@ class ImageView(QGraphicsView):
             if self.resize_type:
                 modify_box(self.hovered_box.get_json(), self.hovered_box.observation_uuid, self.hovered_box.association_uuid)
 
-            self.pt_1 = None
-            self.pt_2 = None
-            self.hov_pt_1 = None
-            self.resize_offset = None
-            self.resize_type = None
-            self.redraw()
+            self.reset_mouse()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if self.pixmap_src:

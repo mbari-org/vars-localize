@@ -3,12 +3,14 @@ from ui.ConceptSearchbar import ConceptSearchbar
 from ui.EntryTree import EntryTreeItem, update_imaged_moment_entry
 from PyQt5.QtCore import Qt, QPoint, QPointF, QRectF, QLineF
 from PyQt5.QtGui import QResizeEvent, QMouseEvent, QPixmap, QColor, QKeyEvent, QPen, QFont
-from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QDialog, QVBoxLayout, QPushButton
+from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QDialog, QVBoxLayout, QPushButton, QInputDialog, QFormLayout, \
+    QDialogButtonBox, QMessageBox
 
 from ui.BoundingBox import BoundingBoxManager, GraphicsBoundingBox, SourceBoundingBox
 from ui.PropertiesDialog import PropertiesDialog
 from util import utils
-from util.requests import delete_box, create_box, modify_box, create_observation, modify_concept, fetch_image, get_all_concepts
+from util.requests import delete_box, create_box, modify_box, create_observation, modify_concept, fetch_image, \
+    get_all_concepts, get_all_parts
 
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
@@ -231,7 +233,7 @@ class ImageView(QGraphicsView):
 
             if 'recorded_date' in self.moment.metadata.keys():
                 text_dict['Recorded: {}'] = self.moment.metadata['recorded_date'].replace('T', ' ').replace('Z', '')
-            
+
             text_str = ' '.join(k.format(v) for k, v in text_dict.items())
             text_item = self.scene().addText(text_str, QFont('Courier New'))
             text_item.setDefaultTextColor(QColor(255, 255, 255))
@@ -452,9 +454,17 @@ class ImageView(QGraphicsView):
         box.observation_uuid = uuid
         self.draw_bounding_box(box, self.observation_map[uuid].metadata['box_manager'])
         self.observation_map[uuid].metadata['boxes'].append(box)
-        response_json = create_box(box.get_json(), uuid)
+        response_json = create_box(box.get_json(), uuid, to_concept=box.part)
         box.association_uuid = response_json['uuid']
         update_imaged_moment_entry(self.moment)  # Update tree
+
+    def reset_mouse(self):
+        self.pt_1 = None
+        self.pt_2 = None
+        self.hov_pt_1 = None
+        self.resize_offset = None
+        self.resize_type = None
+        self.redraw()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self.pixmap_src:
@@ -471,11 +481,27 @@ class ImageView(QGraphicsView):
 
                 concept = self.observation_map[self.observation_uuid].metadata['concept'] if self.observation_uuid else ''
                 observer = self.observer
+
+                acceptable_parts = ['self'] + get_all_parts()
+                part, part_accepted = QInputDialog.getItem(self, 'Part Selection', 'Select a part',
+                                                           acceptable_parts,
+                                                           current=0)
+                if not part_accepted:
+                    self.reset_mouse()
+                    return
+
+                if part not in acceptable_parts:
+                    QMessageBox.critical(self, 'Error: Bad Part',
+                                         'Bad concept part: "{}". Localization not created.'.format(part))
+                    self.reset_mouse()
+                    return
+
                 new_src_box = SourceBoundingBox(
                     box_json,
                     concept,
                     observer,
-                    utils.get_observer_confidence(observer)
+                    utils.get_observer_confidence(observer),
+                    part=part
                 )
                 if new_src_box.width() * new_src_box.height() > 100:
                     self.handle_new_box(new_src_box)
@@ -483,12 +509,7 @@ class ImageView(QGraphicsView):
             if self.resize_type:
                 modify_box(self.hovered_box.get_json(), self.hovered_box.observation_uuid, self.hovered_box.association_uuid)
 
-            self.pt_1 = None
-            self.pt_2 = None
-            self.hov_pt_1 = None
-            self.resize_offset = None
-            self.resize_type = None
-            self.redraw()
+            self.reset_mouse()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if self.pixmap_src:

@@ -161,7 +161,8 @@ def extract_bounding_boxes(associations: list, concept: str, observation_uuid: s
                 box_json['observer'],
                 box_json['strength'],
                 observation_uuid=observation_uuid,
-                association_uuid=association['uuid']
+                association_uuid=association['uuid'],
+                part=association['to_concept']
             )
 
 

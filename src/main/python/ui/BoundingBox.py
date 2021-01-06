@@ -27,7 +27,7 @@ Bounding box data structure and manager helper class.
 class SourceBoundingBox(QRect):
     """ Bounding box VARS source data structure """
 
-    def __init__(self, box_json, label, observer, strength, observation_uuid=None, association_uuid=None):
+    def __init__(self, box_json, label, observer, strength, observation_uuid=None, association_uuid=None, part=None):
         super(SourceBoundingBox, self).__init__(
             box_json['x'],
             box_json['y'],
@@ -37,6 +37,7 @@ class SourceBoundingBox(QRect):
         self.image_reference_uuid = box_json['image_reference_uuid']
         self.observation_uuid = observation_uuid
         self.association_uuid = association_uuid
+        self.part = part
         self.label = label
         self.observer = observer
         self.strength = strength
@@ -140,10 +141,13 @@ class GraphicsBoundingBox(QGraphicsItem):
         painter.drawRect(0, 0, self.width, self.height)
 
         painter.setFont(QFont('Helvetica', 12, QFont.Bold))
+        draw_text = self.label if self.label else 'No label'
+        if self.source.part is not None and self.source.part != 'self':
+            draw_text += ' ' + self.source.part
         painter.drawText(0, self.height,
                          self.width, 20,
                          Qt.AlignCenter | Qt.TextDontClip,
-                         self.label if self.label else 'No label')
+                         draw_text)
 
 
 class BoundingBoxManager:

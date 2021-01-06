@@ -1,5 +1,6 @@
 # requests.py (vars-localize)
 import json
+from typing import Optional
 
 import util.utils
 
@@ -21,6 +22,7 @@ import requests
 from PyQt5.QtGui import QPixmap
 
 concepts = None
+parts = None
 
 
 def auth_retry(fail_msg):
@@ -94,6 +96,19 @@ def get_all_concepts():
         response = requests.get(all_concepts_endpoint)
         concepts = response.json()  # List of concept strings
     return concepts
+
+
+def get_all_parts():
+    """
+    Return a list of all concept parts
+    :return: List of part strings
+    """
+    global parts
+    if not parts:
+        all_parts_endpoint = util.utils.get_property('endpoints', 'all_parts')
+        response = requests.get(all_parts_endpoint)
+        parts = [el['name'] for el in response.json()]  # List of part strings
+    return parts
 
 
 def concept_count(concept: str):
@@ -210,11 +225,12 @@ def delete_observation(observation_uuid: str):
 
 
 @auth_retry('Box creation failed.')
-def create_box(box_json, observation_uuid: str):
+def create_box(box_json, observation_uuid: str, to_concept: Optional[str] = None):
     """
     Creates an association for a box in VARS
     :param box_json: JSON of bounding box data
     :param observation_uuid: Observation UUID
+    :param to_concept: Optional concept part
     :return: HTTP response JSON if success, else None
     """
     request_data = {
@@ -223,6 +239,9 @@ def create_box(box_json, observation_uuid: str):
         'link_value': json.dumps(box_json),
         'mime_type': 'application/json'
     }
+
+    if to_concept is not None:
+        request_data['to_concept'] = to_concept
 
     token = check_auth()
 

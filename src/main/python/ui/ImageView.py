@@ -10,7 +10,7 @@ from ui.BoundingBox import BoundingBoxManager, GraphicsBoundingBox, SourceBoundi
 from ui.PropertiesDialog import PropertiesDialog
 from util import utils
 from util.requests import delete_box, create_box, modify_box, create_observation, modify_concept, fetch_image, \
-    get_all_concepts, get_all_parts
+    get_all_concepts, get_all_parts, get_video_data
 
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
@@ -232,7 +232,13 @@ class ImageView(QGraphicsView):
             }
 
             if 'recorded_date' in self.moment.metadata.keys():
-                text_dict['Recorded: {}'] = self.moment.metadata['recorded_date'].replace('T', ' ').replace('Z', '')
+                text_dict['Recorded: {:<20}'] = self.moment.metadata['recorded_date'].replace('T', ' ').replace('Z', '')
+
+            if 'video_data' not in self.moment.metadata.keys():
+                self.moment.metadata['video_data'] = get_video_data(self.moment.metadata['video_reference_uuid'])
+
+            video_sequence_name = self.moment.metadata['video_data']['uri'].split(':')[-1]
+            text_dict['Video: {:<10}'] = video_sequence_name
 
             text_str = ' '.join(k.format(v) for k, v in text_dict.items())
             text_item = self.scene().addText(text_str, QFont('Courier New'))

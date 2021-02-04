@@ -394,3 +394,19 @@ def modify_concept(observation_uuid: str, new_concept: str, observer: str, retry
         }
     )
     return response.json()
+
+
+def get_video_data(video_reference_uuid: str):
+    """
+    Get data for a particular video reference UUID
+    :param video_reference_uuid: Video reference UUID to lookup
+    :return: JSON data if valid UUID, else None
+    """
+    response = requests.get(
+        util.utils.get_property('endpoints', 'video_data') + '/{}'.format(video_reference_uuid),
+    )
+
+    if response.status_code == 200:
+        return response.json()
+
+    return None

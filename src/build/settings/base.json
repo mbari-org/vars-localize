@@ -1,6 +1,0 @@
-{
-    "app_name": "VARS Anchor",
-    "author": "Kevin Barnard",
-    "main_module": "src/main/python/main.py",
-    "version": "1.0"
-}

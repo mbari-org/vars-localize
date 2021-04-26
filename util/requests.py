@@ -53,7 +53,7 @@ def check_connection():
     """
     try:
         r = requests.get(
-            util.utils.get_property('endpoints', 'prod_site'), timeout=3
+            util.utils.get_property('endpoints', 'prod_anno_site'), timeout=3
         )
         return r.status_code == 200
     except:

@@ -33,11 +33,11 @@ from util.utils import log
 
 class AppWindow(QMainWindow):
 
-    def __init__(self, appctxt, parent=None):
+    def __init__(self, parent=None):
         super(AppWindow, self).__init__(parent)
 
-        self.setWindowTitle('VARS Anchor')
-        self.setWindowIcon(QIcon(appctxt.get_resource('images/Icon.ico')))
+        self.setWindowTitle('VARS Localize')
+        self.setWindowIcon(QIcon('images/Icon.ico'))
 
         log('Checking connection to M3...')
         if not check_connection():

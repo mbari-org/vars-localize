@@ -3,14 +3,13 @@ from ui.ConceptSearchbar import ConceptSearchbar
 from ui.EntryTree import EntryTreeItem, update_imaged_moment_entry
 from PyQt5.QtCore import Qt, QPoint, QPointF, QRectF, QLineF
 from PyQt5.QtGui import QResizeEvent, QMouseEvent, QPixmap, QColor, QKeyEvent, QPen, QFont
-from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QDialog, QVBoxLayout, QPushButton, QInputDialog, QFormLayout, \
-    QDialogButtonBox, QMessageBox
+from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QDialog, QVBoxLayout, QPushButton, QInputDialog, QMessageBox
 
 from ui.BoundingBox import BoundingBoxManager, GraphicsBoundingBox, SourceBoundingBox
 from ui.PropertiesDialog import PropertiesDialog
 from util import utils
-from util.requests import delete_box, create_box, modify_box, create_observation, modify_concept, fetch_image, \
-    get_all_concepts, get_all_parts, get_video_data
+from util.requests import delete_box, create_box, modify_box, create_observation, fetch_image, \
+    get_all_parts, get_video_data
 
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"

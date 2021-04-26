@@ -18,8 +18,6 @@ QLineEdit custom widget for searching concepts.
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import QLineEdit, QCompleter
 
-from util import utils
-
 
 class ConceptSearchbar(QLineEdit):
 

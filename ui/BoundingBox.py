@@ -3,7 +3,7 @@ import typing
 
 from PyQt5.QtCore import Qt, QRectF, QPoint, QSizeF, QRect, QPointF
 from PyQt5.QtGui import QColor, QPainter, QPen, QFont
-from PyQt5.QtWidgets import QGraphicsItem, QStyleOptionGraphicsItem, QWidget, QGraphicsSceneHoverEvent
+from PyQt5.QtWidgets import QGraphicsItem, QStyleOptionGraphicsItem, QWidget
 
 import util.requests
 import util.utils

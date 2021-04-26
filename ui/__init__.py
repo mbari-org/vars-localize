@@ -8,7 +8,7 @@ __maintainer__ = "Kevin Barnard"
 __email__ = "kbarnard@mbari.org"
 __doc__ = '''
 
-DESCRIPTION
+UI Package of vars-localize
 
 @author: __author__
 @status: __status__

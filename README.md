@@ -19,9 +19,8 @@ From the root directory, run:
 ```bash
 conda env create -f environment.yml
 ```
-*Note: Windows users should use `environment_windows.yml` instead of `environment.yml`*
 
-This will create an Anaconda environment named *vars-localize* with the python dependencies.
+This will create an Anaconda environment named *vars-localize* with all required dependencies.
 
 **2. Activate Anaconda environment**
 

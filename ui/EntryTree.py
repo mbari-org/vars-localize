@@ -134,6 +134,7 @@ class ImagedMomentTree(EntryTree):
         :param value: Value to set
         :return: None
         """
+        self.time_window = value
 
     def fetch_uuids(self, concept: str):
         """
@@ -167,6 +168,25 @@ class ImagedMomentTree(EntryTree):
         for result in results:
             item = self.add_item(result)
             self.load_imaged_moment_entry(item)  # Fetch imaged moment observation/metadata
+
+    def query_imaged_moment(self, imaged_moment_uuid: str):
+        """
+        Query for a particular imaged moment and add it to the tree
+        :param imaged_moment_uuid: Imaged moment UUID
+        :return: None
+        """
+        self.loaded_uuids = [imaged_moment_uuid]
+        self.loaded_concept = None
+
+        result = {
+            'uuid': imaged_moment_uuid,
+            'type': 'imaged_moment',
+            'status': 'unknown'
+        }
+
+        self.clear()
+        item = self.add_item(result)
+        self.load_imaged_moment_entry(item)
 
     def load_imaged_moment_entry(self, entry: EntryTreeItem):
         """

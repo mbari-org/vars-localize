@@ -21,7 +21,7 @@ Application Window.
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QCloseEvent, QIcon
 from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QDialog, QVBoxLayout, QFormLayout, QLineEdit, \
-    QPushButton, QCompleter, QMessageBox, QAction
+    QPushButton, QCompleter, QMessageBox, QAction, QInputDialog
 
 from ui.ConceptEntry import ConceptEntry
 from ui.DisplayPanel import DisplayPanel
@@ -130,6 +130,8 @@ class AppWindow(QMainWindow):
         if self.observer_role in ('Maint', 'Admin'):
             self.add_admin_menu()
 
+        self.add_search_menu()
+
     def add_admin_menu(self):
         """
         Add the admin menu for observation modification/deletion
@@ -146,6 +148,23 @@ class AppWindow(QMainWindow):
 
         admin_mode_action.toggled.connect(set_admin_mode)
         options_menu.addAction(admin_mode_action)
+
+    def add_search_menu(self):
+        """
+        Add the Go menu for non-concept searches
+        """
+        main_menu = self.menuBar()
+        search_menu = main_menu.addMenu('&Search')
+
+        search_imaged_moment_action = QAction('Imaged Moment UUID', search_menu)
+
+        def search_imaged_moment():
+            imaged_moment_uuid, ok = QInputDialog.getText(self, 'Specify an Imaged Moment UUID', 'Imaged Moment UUID')
+            if ok:
+                self.search_panel.load_imaged_moment_uuid(imaged_moment_uuid.lower())
+
+        search_imaged_moment_action.triggered.connect(search_imaged_moment)
+        search_menu.addAction(search_imaged_moment_action)
 
     def closeEvent(self, a0: QCloseEvent) -> None:
         """

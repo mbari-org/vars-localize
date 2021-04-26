@@ -1,7 +1,8 @@
 # EntryTree.py (vars-localize)
 from PyQt5 import QtCore
 from PyQt5.QtGui import QFont, QBrush, QColor, QKeyEvent
-from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QAbstractItemView, QDialog, QMessageBox
+from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QAbstractItemView, QDialog, QMessageBox, QHeaderView, \
+    QAbstractScrollArea
 
 from util.requests import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments, \
     delete_observation
@@ -64,7 +65,6 @@ class EntryTree(QTreeWidget):
 
         self.setHeaderLabels(headers)
         self.header_map = dict([tup[::-1] for tup in enumerate(headers)])  # header -> column lookup
-        self.resizeColumnToContents(self.header_map['status'])
 
     def add_item(self, data, parent=None):
         """
@@ -125,6 +125,12 @@ class ImagedMomentTree(EntryTree):
         self.editable_uuids = set()
 
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
+
+        header = self.header()
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setViewportMargins(0, 0, 0, 0)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        header.setCascadingSectionResizes(True)
 
         self.currentItemChanged.connect(self.item_changed)
 

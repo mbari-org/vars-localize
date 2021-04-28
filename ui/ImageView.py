@@ -234,10 +234,12 @@ class ImageView(QGraphicsView):
                 text_dict['Recorded: {:<20}'] = self.moment.metadata['recorded_date'].replace('T', ' ').replace('Z', '')
 
             if 'video_data' not in self.moment.metadata.keys():
-                self.moment.metadata['video_data'] = get_video_data(self.moment.metadata['video_reference_uuid'])
+                video_data = get_video_data(self.moment.metadata['video_reference_uuid'])
+                self.moment.metadata['video_data'] = video_data
 
-            video_sequence_name = self.moment.metadata['video_data']['uri'].split(':')[-1]
-            text_dict['Video: {:<10}'] = video_sequence_name
+            if self.moment.metadata['video_data'] and 'uri' in self.moment.metadata['video_data']:
+                video_sequence_name = self.moment.metadata['video_data']['uri'].split(':')[-1]
+                text_dict['Video: {:<10}'] = video_sequence_name
 
             text_str = ' '.join(k.format(v) for k, v in text_dict.items())
             text_item = self.scene().addText(text_str, QFont('Courier New'))

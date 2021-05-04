@@ -220,15 +220,17 @@ class ImageView(QGraphicsView):
         """
         if 'ancillary_data' in self.moment.metadata.keys():
             ancillary_data = self.moment.metadata['ancillary_data']
-            depth = ancillary_data['depth_meters']
-            latitude = ancillary_data['latitude']
-            longitude = ancillary_data['longitude']
 
-            text_dict = {
-                'Depth (m): {:<10.2f}': depth,
-                'Latitude: {:<10.3f}': latitude,
-                'Longitude: {:<10.3f}': longitude
-            }
+            text_dict = {}
+
+            if 'depth_meters' in ancillary_data:
+                text_dict['Depth (m): {:<10.2f}'] = ancillary_data['depth_meters']
+
+            if 'latitude' in ancillary_data:
+                text_dict['Latitude: {:<10.3f}'] = ancillary_data['latitude']
+
+            if 'longitude' in ancillary_data:
+                text_dict['Longitude: {:<10.3f}'] = ancillary_data['longitude']
 
             if 'recorded_date' in self.moment.metadata.keys():
                 text_dict['Recorded: {:<20}'] = self.moment.metadata['recorded_date'].replace('T', ' ').replace('Z', '')

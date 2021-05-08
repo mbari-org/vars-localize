@@ -2,7 +2,7 @@
 from PyQt5 import QtCore
 from PyQt5.QtGui import QFont, QBrush, QColor, QKeyEvent
 from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QAbstractItemView, QDialog, QMessageBox, QHeaderView, \
-    QAbstractScrollArea
+    QAbstractScrollArea, QMenu, QAction, QApplication
 
 from util.requests import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments, \
     delete_observation
@@ -66,6 +66,9 @@ class EntryTree(QTreeWidget):
         self.setHeaderLabels(headers)
         self.header_map = dict([tup[::-1] for tup in enumerate(headers)])  # header -> column lookup
 
+        self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.menu)
+
     def add_item(self, data, parent=None):
         """
         Create an entry tree item from dictionary of data, add to tree, and return item
@@ -82,6 +85,23 @@ class EntryTree(QTreeWidget):
             item.setText(0, 'No results found.')
 
         return item
+
+    def menu(self, point):
+        item = self.itemAt(point)
+        if item is None:
+            return
+
+        menu = QMenu("Context menu", self)
+        copy_action = QAction("Copy UUID")
+
+        def do_copy():
+            clipboard = QApplication.clipboard()
+            clipboard.setText(item.metadata['uuid'])
+
+        copy_action.triggered.connect(do_copy)
+        menu.addAction(copy_action)
+
+        menu.exec(self.viewport().mapToGlobal(point))
 
 
 def update_imaged_moment_entry(entry: EntryTreeItem):

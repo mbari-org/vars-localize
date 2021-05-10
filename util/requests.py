@@ -410,3 +410,19 @@ def get_video_data(video_reference_uuid: str):
         return response.json()
 
     return None
+
+
+def get_imaged_moments_by_image_reference(image_reference_uuid: str):
+    """
+    Get imaged moments using a particular image reference UUID
+    :param image_reference_uuid: Image reference UUID
+    :return : JSON data if valid UUID, else None
+    """
+    response = requests.get(
+        util.utils.get_property('endpoints', 'observation') + '/imagereference/' + image_reference_uuid.lower(),
+    )
+
+    if response.status_code == 200:
+        return response.json()
+
+    return None

@@ -103,10 +103,10 @@ class SearchPanel(QDockWidget):
             self.entry_tree.query(self.concept, self.paginator.offset, self.paginator.limit)  # Get imaged moments
             self.paginator.set_count(len(self.entry_tree.loaded_uuids))  # Set count
 
-    def load_imaged_moment_uuid(self, imaged_moment_uuid):
-        self.entry_tree.query_imaged_moment(imaged_moment_uuid)
+    def load_imaged_moment_uuids(self, imaged_moment_uuids):
+        self.entry_tree.set_results(imaged_moment_uuids)
         self.paginator.set_offset(0)
-        self.paginator.set_count(1)
+        self.paginator.set_count(len(imaged_moment_uuids))
         self.parent().display_panel.image_view.redraw()
 
     def select_next(self):

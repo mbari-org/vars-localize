@@ -27,8 +27,8 @@ from ui.ConceptEntry import ConceptEntry
 from ui.DisplayPanel import DisplayPanel
 from ui.SearchPanel import SearchPanel
 
-from util.requests import check_connection, get_all_users
-from util.utils import log
+from util.requests import check_connection, get_all_users, get_imaged_moments_by_image_reference
+from util.utils import log, split_comma_list
 
 
 class AppWindow(QMainWindow):
@@ -156,15 +156,29 @@ class AppWindow(QMainWindow):
         main_menu = self.menuBar()
         search_menu = main_menu.addMenu('&Search')
 
-        search_imaged_moment_action = QAction('Imaged Moment UUID', search_menu)
-
         def search_imaged_moment():
-            imaged_moment_uuid, ok = QInputDialog.getText(self, 'Specify an Imaged Moment UUID', 'Imaged Moment UUID')
+            imaged_moment_uuid, ok = QInputDialog.getText(self, 'Imaged Moment UUID Search', 'Imaged Moment UUID')
             if ok:
-                self.search_panel.load_imaged_moment_uuid(imaged_moment_uuid.lower())
+                self.search_panel.load_imaged_moment_uuids([imaged_moment_uuid.lower()])
 
+        search_imaged_moment_action = QAction('Imaged Moment UUID', search_menu)
         search_imaged_moment_action.triggered.connect(search_imaged_moment)
         search_menu.addAction(search_imaged_moment_action)
+
+        def search_image_reference():
+            image_reference_uuid_list, ok = QInputDialog.getText(self, 'Image Reference UUID Search', 'Image Reference UUID')
+            if ok:
+                all_image_reference_uuids = split_comma_list(image_reference_uuid_list)
+                imaged_moment_uuids = []
+                for image_reference_uuid in all_image_reference_uuids:
+                    res = get_imaged_moments_by_image_reference(image_reference_uuid)
+                    if res:
+                        imaged_moment_uuids.extend([item['imaged_moment_uuid'] for item in res])
+                self.search_panel.load_imaged_moment_uuids(set(imaged_moment_uuids))
+
+        search_image_reference_action = QAction('Image Reference UUID', search_menu)
+        search_image_reference_action.triggered.connect(search_image_reference)
+        search_menu.addAction(search_image_reference_action)
 
     def closeEvent(self, a0: QCloseEvent) -> None:
         """

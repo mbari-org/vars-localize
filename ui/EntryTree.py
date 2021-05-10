@@ -201,18 +201,28 @@ class ImagedMomentTree(EntryTree):
         :param imaged_moment_uuid: Imaged moment UUID
         :return: None
         """
-        self.loaded_uuids = [imaged_moment_uuid]
+        self.set_results([imaged_moment_uuid])
+
+    def set_results(self, imaged_moment_uuids):
+        """
+        Manually set the available imaged moment UUIDs in the tree
+        Note: The loaded concept is reset to None
+        """
+        self.loaded_uuids = imaged_moment_uuids
         self.loaded_concept = None
 
-        result = {
-            'uuid': imaged_moment_uuid,
+        results = [{
+            'uuid': uuid,
             'type': 'imaged_moment',
             'status': 'unknown'
-        }
+        } for uuid in imaged_moment_uuids]
 
         self.clear()
-        item = self.add_item(result)
-        self.load_imaged_moment_entry(item)
+        if not results:
+            self.add_item(None, self)
+        for result in results:
+            item = self.add_item(result)
+            self.load_imaged_moment_entry(item)  # Fetch imaged moment observation/metadata
 
     def load_imaged_moment_entry(self, entry: EntryTreeItem):
         """

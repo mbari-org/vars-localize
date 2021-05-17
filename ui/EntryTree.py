@@ -252,6 +252,9 @@ class ImagedMomentTree(EntryTree):
                 meta['image_reference_uuid'] = image_reference['uuid']
                 meta['url'] = image_reference['url']
                 break
+        else:  # No image reference found
+            meta['image_reference_uuid'] = None
+            meta['url'] = None
 
         for observation in meta['observations']:
             obs_item = self.add_item(observation, parent=entry)
@@ -279,7 +282,7 @@ class ImagedMomentTree(EntryTree):
             return
         if current.metadata['type'] == 'imaged_moment':
             if not current.childCount():
-                self.load_imaged_moment(current)
+                self.load_imaged_moment_entry(current)
             self.parent().parent().association_text.setText('')
         elif current.metadata['type'] == 'observation':
             associations = current.metadata['associations']

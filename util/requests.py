@@ -158,7 +158,7 @@ def check_auth():
     if not token:
         token = auth()
     if not token:
-        raise ValueError('Bad API key! Check it in src/main/resources/base/config/api_key.txt')
+        raise ValueError('Bad API key! Check it in config/api_key.txt')
     else:
         return token
 

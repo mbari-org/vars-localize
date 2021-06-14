@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QAbstractItemView, QDi
 
 from util.requests import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments, \
     delete_observation
-from util.utils import extract_bounding_boxes
+from util.utils import extract_bounding_boxes, log
 
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
@@ -237,15 +237,24 @@ class ImagedMomentTree(EntryTree):
         meta = entry.metadata
         meta['type'] = 'imaged_moment'
 
-        all_moments = get_windowed_moments(  # Fetch all moments in window
-            [meta['video_reference_uuid']], meta['uuid'],
-            self.time_window
-        )
-        for moment in all_moments:  # Add other observations to the imaged moment observations list
-            known_observation_uuids = [obs['uuid'] for obs in meta['observations']]
-            for obs in moment['observations']:
-                if obs['uuid'] not in known_observation_uuids:
-                    meta['observations'].append(obs)
+        video_reference_uuid = meta['video_reference_uuid']
+        imaged_moment_uuid = meta['uuid']
+
+        try:
+            all_moments = get_windowed_moments(  # Fetch all moments in window
+                [meta['video_reference_uuid']], meta['uuid'],
+                self.time_window
+            )
+
+            for moment in all_moments:  # Add other observations to the imaged moment observations list
+                known_observation_uuids = [obs['uuid'] for obs in meta['observations']]
+                for obs in moment['observations']:
+                    if obs['uuid'] not in known_observation_uuids:
+                        meta['observations'].append(obs)
+        except:
+            log('Failed to fetch windowed moments for video reference {} around imaged moment {}'.format(
+                video_reference_uuid, imaged_moment_uuid
+            ), level=2)
 
         for image_reference in meta['image_references']:  # Pick the image reference & URL to use
             if image_reference['format'] == 'image/png':

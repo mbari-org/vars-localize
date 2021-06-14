@@ -363,7 +363,8 @@ def get_windowed_moments(video_reference_uuids: list, imaged_moment_uuid: str, t
         data=json.dumps(request_data),
         headers={
             'Content-Type': 'application/json'
-        }
+        },
+        timeout=2  # TODO Remove once endpoint is fixed
     )
     response_json = response.json()
     return response_json

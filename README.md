@@ -48,6 +48,7 @@ API_KEY=foo
 
 Production Annosaurus API keys may be acquired from Brian Schlining ([brian@mbari.org](mailto:brian@mbari.org)).
 
+### 2. Configure the proper M3 endpoints
 The application settings can be configured within `config/config.ini`.
 The settings below should be modified to switch from test to production mode:
 ```ini

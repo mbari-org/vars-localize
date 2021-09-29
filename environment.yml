@@ -1,0 +1,8 @@
+name: vars-localize
+channels:
+  - defaults
+dependencies:
+  - python>=3.7.4
+  - pyqt>=5.9.2
+  - requests>=2.22.0
+  - python-dotenv>=0.19.0

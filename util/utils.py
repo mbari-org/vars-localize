@@ -6,6 +6,7 @@ from functools import reduce
 import json
 import os
 import urllib.parse
+from dotenv import load_dotenv
 
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
@@ -75,12 +76,13 @@ def get_property(category, prop):
 
 def get_api_key():
     """
-    Returns the API key for authorization from 'config/api_key.txt'
+    Returns the API key for Annosaurus authorization from .env
     :return: API key string
     """
-    api_key_file = open('config/api_key.txt', 'r')
-    key = api_key_file.readlines()[0].strip()
-    api_key_file.close()
+    key = os.getenv('API_KEY')
+    if key is None:
+        load_dotenv()
+    key = os.getenv('API_KEY')
     return key
 
 

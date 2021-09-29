@@ -26,26 +26,29 @@ This will create an Anaconda environment named *vars-localize* with all required
 
 To activate the environment, run:
 ```bash
-conda activate vars-localize
+$ conda activate vars-localize
 ```
 
 ### Using pip directly
 If setup with Anaconda does not work or isn't preferred, the dependencies can be installed through pip3 with Python 3.
 
-Run the following commands to install the required packages in your system.
+Run the following command to install the required packages in your system.
 ```bash
-pip install PyQt5
-pip install requests
+$ pip install -r requirements.txt
 ```
 
 ## Configuration **(required)**
-*The configuration directory is `config/`. All files within this section are referenced from within this directory.*
 
-Setting the API key is necessary for the application to save localization data back to VARS. Put the API key on a single line within the file `api_key.txt`.
+### 1. Set the Annosaurus API key
+Setting the API key is necessary for the application to save localization data back to VARS. 
+Change this in `.env`:
+```
+API_KEY=foo
+```
 
-The official M3 API key can be acquired from Brian Schlining ([brian@mbari.org](mailto:brian@mbari.org)).
+Production Annosaurus API keys may be acquired from Brian Schlining ([brian@mbari.org](mailto:brian@mbari.org)).
 
-The application settings can be configured within `config.ini`.
+The application settings can be configured within `config/config.ini`.
 The settings below should be modified to switch from test to production mode:
 ```ini
 user_site = %(test_user_site)s/accounts/v1

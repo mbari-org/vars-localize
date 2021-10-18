@@ -157,9 +157,10 @@ class AppWindow(QMainWindow):
         search_menu = main_menu.addMenu('&Search')
 
         def search_imaged_moment():
-            imaged_moment_uuid, ok = QInputDialog.getText(self, 'Imaged Moment UUID Search', 'Imaged Moment UUID')
+            imaged_moment_uuid_list, ok = QInputDialog.getText(self, 'Imaged Moment UUID Search', 'Imaged Moment UUID')
             if ok:
-                self.search_panel.load_imaged_moment_uuids([imaged_moment_uuid.lower()])
+                imaged_moment_uuids = split_comma_list(imaged_moment_uuid_list)
+                self.search_panel.load_imaged_moment_uuids(set(imaged_moment_uuids))
 
         search_imaged_moment_action = QAction('Imaged Moment UUID', search_menu)
         search_imaged_moment_action.triggered.connect(search_imaged_moment)

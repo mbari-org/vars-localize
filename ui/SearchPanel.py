@@ -25,7 +25,7 @@ from PyQt5.QtWidgets import QDockWidget, QMessageBox, QVBoxLayout, QWidget, QHBo
 
 from ui.ConceptSearchbar import ConceptSearchbar
 
-from util.requests import fast_search, get_all_concepts, delete_observation, get_imaged_moment_uuids, modify_concept
+from util.requests import get_all_concepts, delete_observation, get_imaged_moment_uuids, modify_concept
 
 from ui.EntryTree import EntryTreeItem
 

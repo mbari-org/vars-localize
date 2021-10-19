@@ -157,17 +157,21 @@ class AppWindow(QMainWindow):
         search_menu = main_menu.addMenu('&Search')
 
         def search_imaged_moment():
-            imaged_moment_uuid_list, ok = QInputDialog.getText(self, 'Imaged Moment UUID Search', 'Imaged Moment UUID')
+            imaged_moment_uuid_list, ok = QInputDialog.getText(self, 'Imaged Moment UUID Search', 'Imaged Moment UUID (or comma-separated list)')
             if ok:
                 imaged_moment_uuids = split_comma_list(imaged_moment_uuid_list)
-                self.search_panel.load_imaged_moment_uuids(set(imaged_moment_uuids))
+                imaged_moment_uuids = list(set(imaged_moment_uuids))  # Ensure no duplicates
+                
+                # Set the UUIDs and load the first page
+                self.search_panel.set_uuids(imaged_moment_uuids)
+                self.search_panel.load_page()
 
         search_imaged_moment_action = QAction('Imaged Moment UUID', search_menu)
         search_imaged_moment_action.triggered.connect(search_imaged_moment)
         search_menu.addAction(search_imaged_moment_action)
 
         def search_image_reference():
-            image_reference_uuid_list, ok = QInputDialog.getText(self, 'Image Reference UUID Search', 'Image Reference UUID')
+            image_reference_uuid_list, ok = QInputDialog.getText(self, 'Image Reference UUID Search', 'Image Reference UUID (or comma-separated list)')
             if ok:
                 all_image_reference_uuids = split_comma_list(image_reference_uuid_list)
                 imaged_moment_uuids = []
@@ -175,7 +179,11 @@ class AppWindow(QMainWindow):
                     res = get_imaged_moments_by_image_reference(image_reference_uuid)
                     if res:
                         imaged_moment_uuids.extend([item['imaged_moment_uuid'] for item in res])
-                self.search_panel.load_imaged_moment_uuids(set(imaged_moment_uuids))
+                imaged_moment_uuids = list(set(imaged_moment_uuids))  # Ensure no duplicates
+                
+                # Set the UUIDs and load the first page
+                self.search_panel.set_uuids(imaged_moment_uuids)
+                self.search_panel.load_page()
 
         search_image_reference_action = QAction('Image Reference UUID', search_menu)
         search_image_reference_action.triggered.connect(search_image_reference)

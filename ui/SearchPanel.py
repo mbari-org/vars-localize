@@ -20,12 +20,12 @@ Dock widget used to search for concepts and select frame grabs.
 @license: __license__
 '''
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QDockWidget, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QScrollArea, QTextEdit, QLabel, \
+from PyQt5.QtWidgets import QDockWidget, QMessageBox, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QScrollArea, QTextEdit, QLabel, \
     QSizePolicy, QDialog, QPushButton, QDialogButtonBox
 
 from ui.ConceptSearchbar import ConceptSearchbar
 
-from util.requests import get_all_concepts, delete_observation, modify_concept
+from util.requests import fast_search, get_all_concepts, delete_observation, get_imaged_moment_uuids, modify_concept
 
 from ui.EntryTree import EntryTreeItem
 
@@ -45,6 +45,7 @@ class SearchPanel(QDockWidget):
         self.setWidget(self.contents)
 
         self.concept = None
+        self.uuids = []
 
         self.top_bar = QWidget()
         self.top_bar.setLayout(QHBoxLayout())
@@ -88,26 +89,43 @@ class SearchPanel(QDockWidget):
         self.observer = ''
 
     def concept_selected(self, concept):
-        if concept in get_all_concepts():
-            self.concept = concept
-            self.load_results()
-
-    def load_results(self):
-        self.parent().display_panel.image_view.set_pixmap(None)
+        if concept == self.concept:  # No change, don't update results
+            return
+        else:
+            self.load_concept(concept)
+            
+    def set_uuids(self, uuids):
+        # Update the UUIDs
+        self.uuids = uuids
+        
+        # Update the paginator
         self.paginator.set_offset(0)
-        self.load_page()
+        self.paginator.set_count(len(uuids))
+
+    def load_concept(self, concept):
+        if concept not in get_all_concepts():
+            QMessageBox.warning('Concept "" is invalid.'.format(concept))
+            return
+        
+        self.concept = concept
+        
+        # Clear the display panel
+        self.parent().display_panel.image_view.set_pixmap(None)
         self.parent().display_panel.image_view.redraw()
+        
+        # Fetch the list of imaged moment UUIDs for the concept (with images)
+        concept_uuids = get_imaged_moment_uuids(self.concept)
+        self.set_uuids(concept_uuids)
+        
+        # Load the first page
+        self.load_page()
 
     def load_page(self):
-        if self.concept:
-            self.entry_tree.query(self.concept, self.paginator.offset, self.paginator.limit)  # Get imaged moments
-            self.paginator.set_count(len(self.entry_tree.loaded_uuids))  # Set count
-
-    def load_imaged_moment_uuids(self, imaged_moment_uuids):
-        self.entry_tree.set_results(imaged_moment_uuids)
-        self.paginator.set_offset(0)
-        self.paginator.set_count(len(imaged_moment_uuids))
-        self.parent().display_panel.image_view.redraw()
+        # Specify UUIDs in page from paginator slice
+        page_uuids = self.uuids[self.paginator.slice]
+        
+        # Do the actual load (takes some time)
+        self.entry_tree.load_uuids(page_uuids)
 
     def select_next(self):
         self.entry_tree.setCurrentIndex(self.entry_tree.indexBelow(self.entry_tree.currentIndex()))

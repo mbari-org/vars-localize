@@ -89,6 +89,10 @@ class Paginator(QWidget):
     def set_count(self, count):
         self.count = count
         self.update_nav()
+    
+    @property
+    def slice(self):
+        return slice(self.offset, self.offset + self.limit)
 
     def mouseDoubleClickEvent(self, a0: QtGui.QMouseEvent) -> None:
         if not self.left_button.isEnabled() and not self.right_button.isEnabled():

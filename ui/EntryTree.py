@@ -1,7 +1,8 @@
 # EntryTree.py (vars-localize)
+from typing import List
 from PyQt5 import QtCore
 from PyQt5.QtGui import QFont, QBrush, QColor, QKeyEvent
-from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem, QAbstractItemView, QDialog, QMessageBox, QHeaderView, \
+from PyQt5.QtWidgets import QProgressDialog, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QDialog, QMessageBox, QHeaderView, \
     QAbstractScrollArea, QMenu, QAction, QApplication
 
 from util.requests import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments, \
@@ -139,8 +140,7 @@ class ImagedMomentTree(EntryTree):
             ),
             parent)
 
-        self.loaded_concept = None
-        self.loaded_uuids = []
+        self.uuids = []
         self.time_window = None
         self.editable_uuids = set()
 
@@ -162,67 +162,39 @@ class ImagedMomentTree(EntryTree):
         """
         self.time_window = value
 
-    def fetch_uuids(self, concept: str):
-        """
-        Fetch and load imaged moment uuids to object
-        :param concept: Concept to fetch
-        :return: None
-        """
-        self.loaded_uuids = get_imaged_moment_uuids(concept)
-        self.loaded_concept = concept
-
-    def query(self, concept: str, offset: int, limit: int):
-        """
-        Query and fill tree with imaged moments
-        :param concept: Concept to query
-        :param offset: Offset of imaged moments
-        :param limit: Limit of imaged moments
-        :return: None
-        """
-        if self.loaded_concept != concept:
-            self.fetch_uuids(concept)
-
-        results = [{
-            'uuid': uuid,
-            'type': 'imaged_moment',
-            'status': 'unknown'
-        } for uuid in self.loaded_uuids[offset:offset+limit]]
-
+    def load_uuids(self, uuids: List[str]):
+        # Update the internal list of UUIDs
+        self.uuids = uuids
+        
+        # Munge the results into dicts
+        results = [
+            {
+                'uuid': uuid,
+                'type': 'imaged_moment',
+                'status': 'unknown'
+            }
+            for uuid in uuids
+        ]
+        
+        # Clear the tree
         self.clear()
         if not results:
             self.add_item(None, self)
-        for result in results:
+            return
+        
+        # Load the results into the tree, showing a progress dialog
+        progress = QProgressDialog('Loading imaged moments...', 'Cancel', 0, len(results), self)
+        progress.setModal(True)
+        for idx, result in enumerate(results):
+            progress.setValue(idx)
+            if progress.wasCanceled():
+                progress.close()
+                break
+            
             item = self.add_item(result)
             self.load_imaged_moment_entry(item)  # Fetch imaged moment observation/metadata
-
-    def query_imaged_moment(self, imaged_moment_uuid: str):
-        """
-        Query for a particular imaged moment and add it to the tree
-        :param imaged_moment_uuid: Imaged moment UUID
-        :return: None
-        """
-        self.set_results([imaged_moment_uuid])
-
-    def set_results(self, imaged_moment_uuids):
-        """
-        Manually set the available imaged moment UUIDs in the tree
-        Note: The loaded concept is reset to None
-        """
-        self.loaded_uuids = imaged_moment_uuids
-        self.loaded_concept = None
-
-        results = [{
-            'uuid': uuid,
-            'type': 'imaged_moment',
-            'status': 'unknown'
-        } for uuid in imaged_moment_uuids]
-
-        self.clear()
-        if not results:
-            self.add_item(None, self)
-        for result in results:
-            item = self.add_item(result)
-            self.load_imaged_moment_entry(item)  # Fetch imaged moment observation/metadata
+        
+        progress.setValue(idx + 1)  # Last call, just to finish out the progress dialog
 
     def load_imaged_moment_entry(self, entry: EntryTreeItem):
         """
@@ -254,14 +226,19 @@ class ImagedMomentTree(EntryTree):
         except:
             log('Failed to fetch windowed moments for video reference {} around imaged moment {}'.format(
                 video_reference_uuid, imaged_moment_uuid
-            ), level=2)
+            ), level=1)
 
         for image_reference in meta['image_references']:  # Pick the image reference & URL to use
-            if image_reference['format'] == 'image/png':
+            image_format = image_reference.get('format', None)
+            if image_format is None:  # No image format specified, skip
+                continue
+            
+            if image_format == 'image/png':  # Found a PNG! Use this as the picture to display
                 meta['image_reference_uuid'] = image_reference['uuid']
                 meta['url'] = image_reference['url']
                 break
-        else:  # No image reference found
+        else:  # No valid image reference found
+            log('No valid image reference found for imaged moment {}'.format(imaged_moment_uuid), level=1)
             meta['image_reference_uuid'] = None
             meta['url'] = None
 

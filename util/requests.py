@@ -23,6 +23,7 @@ from PyQt5.QtGui import QPixmap
 
 concepts = None
 parts = None
+session = requests.Session()
 
 
 def auth_retry(fail_msg):
@@ -52,7 +53,7 @@ def check_connection():
     :return: Connection OK
     """
     try:
-        r = requests.get(
+        r = session.get(
             util.utils.get_property('endpoints', 'prod_anno_site'), timeout=3
         )
         return r.status_code == 200
@@ -66,7 +67,7 @@ def get_imaged_moment_uuids(concept: str):
     :param concept: Concept to query
     :return: List of imaged moment uuids
     """
-    response = requests.get(
+    response = session.get(
         util.utils.get_property('endpoints', 'imaged_moments_by_concept') + '/{}'.format(concept)
     )
     return response.json()
@@ -78,7 +79,7 @@ def get_imaged_moment(imaged_moment_uuid: str):
     :param imaged_moment_uuid: UUID of imaged moment
     :return: JSON object of imaged moment
     """
-    response = requests.get(
+    response = session.get(
         util.utils.get_property('endpoints', 'imaged_moment') + '/{}'.format(imaged_moment_uuid)
     )
     response_json = response.json()
@@ -93,7 +94,7 @@ def get_all_concepts():
     global concepts
     if not concepts:
         all_concepts_endpoint = util.utils.get_property('endpoints', 'all_concepts')
-        response = requests.get(all_concepts_endpoint)
+        response = session.get(all_concepts_endpoint)
         concepts = response.json()  # List of concept strings
     return concepts
 
@@ -106,7 +107,7 @@ def get_all_parts():
     global parts
     if not parts:
         all_parts_endpoint = util.utils.get_property('endpoints', 'all_parts')
-        response = requests.get(all_parts_endpoint)
+        response = session.get(all_parts_endpoint)
         parts = [el['name'] for el in response.json()]  # List of part strings
     return parts
 
@@ -118,7 +119,7 @@ def concept_count(concept: str):
     :return: int number of observations with valid image references
     """
     try:
-        response = requests.get(
+        response = session.get(
             util.utils.get_property('endpoints', 'image_count') + '/{}'.format(concept)
         )
         response_json = response.json()
@@ -135,7 +136,7 @@ def auth():
     :return: JWT access token
     """
     try:
-        response = requests.post(
+        response = session.post(
             util.utils.get_property('endpoints', 'auth'),
             headers={
                 'Authorization': 'APIKEY {}'.format(util.utils.get_api_key())
@@ -196,7 +197,7 @@ def create_observation(video_reference_uuid, concept, observer,
 
     token = check_auth()
 
-    response = requests.post(
+    response = session.post(
         util.utils.get_property('endpoints', 'observation'),
         data=request_data,
         headers={
@@ -215,7 +216,7 @@ def delete_observation(observation_uuid: str):
     """
     token = check_auth()
 
-    response = requests.delete(
+    response = session.delete(
         util.utils.get_property('endpoints', 'delete_observation') + '/{}'.format(observation_uuid),
         headers={
             'Authorization': 'BEARER {}'.format(token)
@@ -245,7 +246,7 @@ def create_box(box_json, observation_uuid: str, to_concept: Optional[str] = None
 
     token = check_auth()
 
-    response = requests.post(
+    response = session.post(
         util.utils.get_property('endpoints', 'assoc'),
         data=request_data,
         headers={
@@ -274,7 +275,7 @@ def modify_box(box_json, observation_uuid: str, association_uuid: str, retry=Tru
         'mime_type': 'application/json'
     }
 
-    response = requests.put(
+    response = session.put(
         util.utils.get_property('endpoints', 'assoc') + '/{}'.format(association_uuid),
         data=request_data,
         headers={
@@ -294,7 +295,7 @@ def delete_box(association_uuid: str, retry=True):
     """
     token = check_auth()
 
-    response = requests.delete(
+    response = session.delete(
         util.utils.get_property('endpoints', 'assoc') + '/{}'.format(association_uuid),
         headers={
             'Authorization': 'BEARER {}'.format(token)
@@ -311,7 +312,7 @@ def fetch_image(url: str) -> QPixmap:
     """
     pixmap = QPixmap()
     try:
-        image_contents = requests.get(url).content
+        image_contents = session.get(url).content
         pixmap.loadFromData(image_contents)
     except Exception as e:
         util.utils.log('Could not fetch image at {}'.format(url), level=1)
@@ -324,7 +325,7 @@ def get_all_users() -> list:
     Get a list of all available VARS users
     :return: list of all VARS users
     """
-    response = requests.get(
+    response = session.get(
         util.utils.get_property('endpoints', 'users')
     )
     response_json = response.json()
@@ -337,7 +338,7 @@ def get_other_videos(video_reference_uuid: str) -> list:
     :param video_reference_uuid: Base video reference UUID
     :return: List of all concurrent video reference UUIDs
     """
-    response = requests.get(
+    response = session.get(
         util.utils.get_property('endpoints', 'concurrent_videos') + '/{}'.format(video_reference_uuid)
     )
     response_json = response.json()
@@ -358,7 +359,7 @@ def get_windowed_moments(video_reference_uuids: list, imaged_moment_uuid: str, t
         'window': time_window
     }
 
-    response = requests.post(
+    response = session.post(
         util.utils.get_property('endpoints', 'window_request'),
         data=json.dumps(request_data),
         headers={
@@ -387,7 +388,7 @@ def modify_concept(observation_uuid: str, new_concept: str, observer: str, retry
         'observer': observer
     }
 
-    response = requests.put(
+    response = session.put(
         util.utils.get_property('endpoints', 'observation') + '/{}'.format(observation_uuid),
         data=request_data,
         headers={
@@ -403,7 +404,7 @@ def get_video_data(video_reference_uuid: str):
     :param video_reference_uuid: Video reference UUID to lookup
     :return: JSON data if valid UUID, else None
     """
-    response = requests.get(
+    response = session.get(
         util.utils.get_property('endpoints', 'video_data') + '/{}'.format(video_reference_uuid),
     )
 
@@ -419,7 +420,7 @@ def get_imaged_moments_by_image_reference(image_reference_uuid: str):
     :param image_reference_uuid: Image reference UUID
     :return : JSON data if valid UUID, else None
     """
-    response = requests.get(
+    response = session.get(
         util.utils.get_property('endpoints', 'observation') + '/imagereference/' + image_reference_uuid.lower(),
     )
 

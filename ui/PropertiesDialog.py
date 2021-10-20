@@ -34,7 +34,7 @@ class PropertiesDialog(QDialog):
         self.layout().addWidget(self.form)
 
         self.delete_button = QPushButton('Delete')
-        self.delete_button.setStyleSheet('background-color: rgb(255, 150, 150)')
+        self.delete_button.setStyleSheet('background-color: darkred')
         self.delete_button.setDefault(False)
         self.layout().addWidget(self.delete_button)
 

@@ -34,6 +34,7 @@ class ImageView(QGraphicsView):
 
         self.setStyleSheet('border: 0px;')
         self.setMinimumSize(1200, 675)
+        self.setViewportMargins(-2, -2, -2, -2)
         self.setMouseTracking(True)
 
         self.image_scene = QGraphicsScene()

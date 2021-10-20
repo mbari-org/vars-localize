@@ -152,12 +152,12 @@ class SearchPanel(QDockWidget):
         concept_widget = QWidget()
         concept_widget.setLayout(QHBoxLayout())
         delete_button = QPushButton('Delete')
-        delete_button.setStyleSheet('background-color: #ff9696')
+        delete_button.setStyleSheet('background-color: darkred')
         delete_button.setDisabled(not editable and not admin_mode)
         delete_lock = False
 
         button_box = QDialogButtonBox(QDialogButtonBox.Save)
-        button_box.setStyleSheet('background-color: lightgreen')
+        button_box.setStyleSheet('background-color: darkgreen')
         button_box.accepted.connect(dialog.accept)
 
         def do_delete_observation():

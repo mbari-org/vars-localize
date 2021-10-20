@@ -4,6 +4,7 @@ from PyQt5 import QtCore
 from PyQt5.QtGui import QFont, QBrush, QColor, QKeyEvent
 from PyQt5.QtWidgets import QProgressDialog, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QDialog, QMessageBox, QHeaderView, \
     QAbstractScrollArea, QMenu, QAction, QApplication
+from qdarkstyle.dark.palette import DarkPalette
 
 from util.requests import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments, \
     delete_observation
@@ -112,18 +113,18 @@ def update_imaged_moment_entry(entry: EntryTreeItem):
             localized += 1
         obs_item.metadata['status'] = len(obs_item.metadata['boxes'])
         if not obs_item.metadata['status']:
-            obs_item.set_background('status', QColor('#ff9696'))
+            obs_item.set_background('status', QColor(DarkPalette.COLOR_BACKGROUND_6))
         else:
-            obs_item.set_background('status', QColor('#ffffff'))
+            obs_item.set_background('status', QColor(DarkPalette.COLOR_BACKGROUND_1))
         obs_item.update()
 
     percent_localized = localized / len(entry.metadata['observations'])
     if percent_localized < 0.25:
-        entry.set_background('status', QColor('#ff9696'))
+        entry.set_background('status', QColor(DarkPalette.COLOR_ACCENT_3))
     elif percent_localized < 1:
-        entry.set_background('status', QColor('#ffc996'))
+        entry.set_background('status', QColor(DarkPalette.COLOR_ACCENT_2))
     else:
-        entry.set_background('status', QColor('#b9ff96'))
+        entry.set_background('status', QColor(DarkPalette.COLOR_ACCENT_1))
     entry.metadata['status'] = '{}/{}'.format(localized, len(entry.metadata['observations']))
     entry.update()
 

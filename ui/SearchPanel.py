@@ -25,7 +25,7 @@ from PyQt5.QtWidgets import QDockWidget, QMessageBox, QVBoxLayout, QWidget, QHBo
 
 from ui.ConceptSearchbar import ConceptSearchbar
 
-from util.requests import get_all_concepts, delete_observation, get_imaged_moment_uuids, modify_concept
+from util.m3 import get_all_concepts, delete_observation, get_imaged_moment_uuids, rename_observation
 
 from ui.EntryTree import EntryTreeItem
 
@@ -190,7 +190,7 @@ class SearchPanel(QDockWidget):
 
         concept_after = concept_field.text()
         if not delete_lock and concept_after != concept_before:  # Rename the observation
-            modify_concept(observation_uuid, concept_after, self.observer)
+            rename_observation(observation_uuid, concept_after, self.observer)
             moment = item.parent()
             self.entry_tree.load_imaged_moment_entry(moment)
             self.parent().display_panel.image_view.set_entry(moment)

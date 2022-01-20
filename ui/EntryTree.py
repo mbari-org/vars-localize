@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import QProgressDialog, QTreeWidget, QTreeWidgetItem, QAbst
     QAbstractScrollArea, QMenu, QAction, QApplication
 from qdarkstyle.dark.palette import DarkPalette
 
-from util.requests import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments, \
+from util.m3 import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments, \
     delete_observation
 from util.utils import extract_bounding_boxes, log
 

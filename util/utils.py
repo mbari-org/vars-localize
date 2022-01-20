@@ -23,7 +23,6 @@ Utility functions for the application.
 @license: __license__
 '''
 
-GLOBAL_CONFIG = None
 LOG_LEVELS = {0: 'INFO', 1: 'WARNING', 2: 'ERROR'}
 
 
@@ -55,59 +54,6 @@ def n_split_hash(string: str, n: int, maxval: int = 255):
         reduce(lambda a, b: a * b % maxval, [ord(letter) for letter in sorted(part.replace(' ', ''))]) % maxval
         for part in parts
     ])
-
-
-def get_property(category, prop):
-    """
-    Gets a property from a given category from the config file, if it exists
-    :param category: Category to pull from
-    :param prop: Property to fetch
-    :return: Requested property value if exists, else None
-    """
-    global GLOBAL_CONFIG
-    if not GLOBAL_CONFIG:
-        GLOBAL_CONFIG = configparser.ConfigParser()
-        GLOBAL_CONFIG.read('config/config.ini')
-    if category in GLOBAL_CONFIG:
-        if prop in GLOBAL_CONFIG[category]:
-            return GLOBAL_CONFIG[category][prop]
-    return None
-
-
-def get_api_key():
-    """
-    Returns the API key for Annosaurus authorization from .env
-    :return: API key string
-    """
-    key = os.getenv('API_KEY')
-    if key is None:
-        load_dotenv()
-    key = os.getenv('API_KEY')
-    return key
-
-
-def cache_token(token: str):
-    """
-    Caches a token to the 'cache/token.json'
-    :param token: JWT access token JSON string
-    :return: None
-    """
-    if not os.path.exists('cache'):
-        os.makedirs('cache')
-    with open('cache/token.json', 'w') as f:
-        f.write(token)
-
-
-def get_token():
-    """
-    Gets the JWT access token, if it exists
-    :return: JWT access token string if exists, else None
-    """
-    if not os.path.exists('cache/token.json'):
-        return None
-    with open('cache/token.json', 'r') as f:
-        access_token = json.loads(f.read())['access_token']
-        return access_token
 
 
 def encode_form(json_obj):

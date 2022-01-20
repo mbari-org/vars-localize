@@ -1,9 +1,3 @@
-# requests.py (vars-localize)
-import json
-from typing import Optional
-
-import util.utils
-
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
 __credits__ = ["MBARI"]
@@ -18,43 +12,60 @@ HTTP request functions for interacting with M3 endpoints.
 @status: __status__
 @license: __license__
 '''
+import json
+from typing import Optional
+
 import requests
+import requests.auth
 from PyQt5.QtGui import QPixmap
 
-concepts = None
-parts = None
-session = requests.Session()
+from util import endpoints, utils
 
+KB_CONCEPTS = None
+KB_PARTS = None
 
-def auth_retry(fail_msg):
+DEFAULT_SESSION = requests.Session()
+ANNO_SESSION = requests.Session()
+
+class BasicJWTAuth(requests.auth.AuthBase):
     """
-    Decorator for REST calls with auth retry
-    :param fail_msg: Message to show on fail
+    Basic JWT authentication for requests.
+    """
+
+    def __init__(self, token: str):
+        self.token = token
+
+    def __call__(self, r):
+        r.headers['Authorization'] = 'BEARER ' + self.token
+        return r
+
+
+def configure_anno_session():
+    jwt_auth(ANNO_SESSION, endpoints.Annosaurus)
+
+
+def requires_auth(session: requests.Session):
+    """
+    Decorator for REST calls to require authentication
     :return: Wrapped function
     """
-    def wrap_func(func):
-        def retry_func(*args, retry=True, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                if retry:
-                    auth()
-                    return retry_func(*args, retry=False, **kwargs)
-                else:
-                    util.utils.log(fail_msg, level=2)
-                    util.utils.log(e, level=2)
-        return retry_func
-    return wrap_func
+    def wrapper(f):
+        def f_proxy(*args, **kwargs):
+            if session.auth is None:
+                raise Exception('Session must be authenticated')
+            return f(*args, **kwargs)
+        return f_proxy
+    return wrapper
 
 
-def check_connection():
+def check_connection() -> bool:
     """
     Check the connection by sending a GET request to the prod_site endpoint
     :return: Connection OK
     """
     try:
-        r = session.get(
-            util.utils.get_property('endpoints', 'prod_anno_site'), timeout=3
+        r = DEFAULT_SESSION.get(
+            endpoints.M3_URL, timeout=3
         )
         return r.status_code == 200
     except:
@@ -67,8 +78,8 @@ def get_imaged_moment_uuids(concept: str):
     :param concept: Concept to query
     :return: List of imaged moment uuids
     """
-    response = session.get(
-        util.utils.get_property('endpoints', 'imaged_moments_by_concept') + '/{}'.format(concept)
+    response = ANNO_SESSION.get(
+        endpoints.Annosaurus.IMAGED_MOMENTS_BY_CONCEPT + '/' + concept
     )
     return response.json()
 
@@ -79,8 +90,8 @@ def get_imaged_moment(imaged_moment_uuid: str):
     :param imaged_moment_uuid: UUID of imaged moment
     :return: JSON object of imaged moment
     """
-    response = session.get(
-        util.utils.get_property('endpoints', 'imaged_moment') + '/{}'.format(imaged_moment_uuid)
+    response = ANNO_SESSION.get(
+        endpoints.Annosaurus.IMAGED_MOMENT + '/' + imaged_moment_uuid
     )
     response_json = response.json()
     return response_json
@@ -88,15 +99,18 @@ def get_imaged_moment(imaged_moment_uuid: str):
 
 def get_all_concepts():
     """
-    Return a list of all concepts used
+    Return a list of all concepts in the knowledge base
     :return: List of concept strings
     """
-    global concepts
-    if not concepts:
-        all_concepts_endpoint = util.utils.get_property('endpoints', 'all_concepts')
-        response = session.get(all_concepts_endpoint)
-        concepts = response.json()  # List of concept strings
-    return concepts
+    global KB_CONCEPTS
+    if not KB_CONCEPTS:
+        response = DEFAULT_SESSION.get(
+            endpoints.VARSKBServer.ALL_CONCEPTS
+        )
+        
+        KB_CONCEPTS = response.json()
+
+    return KB_CONCEPTS
 
 
 def get_all_parts():
@@ -104,12 +118,15 @@ def get_all_parts():
     Return a list of all concept parts
     :return: List of part strings
     """
-    global parts
-    if not parts:
-        all_parts_endpoint = util.utils.get_property('endpoints', 'all_parts')
-        response = session.get(all_parts_endpoint)
-        parts = [el['name'] for el in response.json()]  # List of part strings
-    return parts
+    global KB_PARTS
+    if not KB_PARTS:
+        response = DEFAULT_SESSION.get(
+            endpoints.VARSKBServer.ALL_PARTS
+        )
+        
+        KB_PARTS = [el['name'] for el in response.json()]
+    
+    return KB_PARTS
 
 
 def concept_count(concept: str):
@@ -119,54 +136,46 @@ def concept_count(concept: str):
     :return: int number of observations with valid image references
     """
     try:
-        response = session.get(
-            util.utils.get_property('endpoints', 'image_count') + '/{}'.format(concept)
+        response = ANNO_SESSION.get(
+            endpoints.Annosaurus.IMAGE_COUNT + '/' + concept
         )
+        response.raise_for_status()
+        
         response_json = response.json()
         return int(response_json['count'])
     except Exception as e:
-        util.utils.log('Concept count failed.', level=2)
-        util.utils.log(e, level=2)
+        utils.log('Concept count failed.', level=2)
+        utils.log(e, level=2)
         return 0
 
 
-def auth():
+def jwt_auth(session: requests.Session, endpoint: endpoints.ConfigEndpoint) -> bool:
     """
-    Authenticate, generate new JWT access token and cache it
-    :return: JWT access token
+    Authenticate a session with basic JWT
+    :return: Success or failure
     """
     try:
         response = session.post(
-            util.utils.get_property('endpoints', 'auth'),
+            endpoint.AUTH,
             headers={
-                'Authorization': 'APIKEY {}'.format(util.utils.get_api_key())
+                'Authorization': 'APIKEY {}'.format(endpoint.SECRET)
             }
         )
-        util.utils.cache_token(response.content.decode())
-        return response.json()['access_token']
+        response.raise_for_status()
+        
+        token = response.json()['access_token']
+        session.auth = BasicJWTAuth(token)
+        
+        return True
     except Exception as e:
-        util.utils.log('Authentication failed.', level=2)
-        util.utils.log(e, level=2)
-        return None
+        utils.log('Authentication failed.', level=2)
+        utils.log(e, level=2)
+        return False
 
 
-def check_auth():
-    """
-    Check cached authentication token is valid, fetch new if not
-    :return: Token str
-    """
-    token = util.utils.get_token()
-    if not token:
-        token = auth()
-    if not token:
-        raise ValueError('Bad API key! Check it in .env')
-    else:
-        return token
-
-
-@auth_retry('Observation creation failed.')
+@requires_auth(ANNO_SESSION)
 def create_observation(video_reference_uuid, concept, observer,
-                       timecode=None, elapsed_time_millis=None, recorded_timestamp=None):
+                       timecode=None, elapsed_time_millis=None, recorded_timestamp=None) -> Optional[dict]:
     """
     Create an observation. One of timecode, elapsed_time, or recorded_timestamp is required as an index
     :param video_reference_uuid: Video reference UUID
@@ -185,7 +194,7 @@ def create_observation(video_reference_uuid, concept, observer,
     }
 
     if not (timecode or elapsed_time_millis or recorded_timestamp):
-        util.utils.log('No observation index provided. Observation creation failed.', level=2)
+        utils.log('No observation index provided. Observation creation failed.', level=2)
         return
 
     if timecode:
@@ -195,38 +204,40 @@ def create_observation(video_reference_uuid, concept, observer,
     if recorded_timestamp:
         request_data['recorded_timestamp'] = recorded_timestamp
 
-    token = check_auth()
+    try:
+        response = ANNO_SESSION.post(
+            endpoints.Annosaurus.OBSERVATION,
+            data=request_data
+        )
+        response.raise_for_status()
+        
+        return response.json()
+    except Exception as e:
+        utils.log('Observation creation failed.', level=2)
+        utils.log(e, level=2)
 
-    response = session.post(
-        util.utils.get_property('endpoints', 'observation'),
-        data=request_data,
-        headers={
-            'Authorization': 'BEARER {}'.format(token)
-        }
-    )
-    return response.json()
 
-
-@auth_retry('Observation deletion failed.')
-def delete_observation(observation_uuid: str):
+@requires_auth(ANNO_SESSION)
+def delete_observation(observation_uuid: str) -> Optional[dict]:
     """
     Delete an observation in VARS
     :param observation_uuid: Observation UUID
-    :return: HTTP response JSON if success, else None
+    :return: HTTP response if success, else None
     """
-    token = check_auth()
+    try:
+        response = ANNO_SESSION.delete(
+            endpoints.Annosaurus.DELETE_OBSERVATION + '/' + observation_uuid
+        )
+        response.raise_for_status()
+        
+        return response
+    except Exception as e:
+        utils.log('Observation deletion failed.', level=2)
+        utils.log(e, level=2)
 
-    response = session.delete(
-        util.utils.get_property('endpoints', 'delete_observation') + '/{}'.format(observation_uuid),
-        headers={
-            'Authorization': 'BEARER {}'.format(token)
-        }
-    )
-    return response
 
-
-@auth_retry('Box creation failed.')
-def create_box(box_json, observation_uuid: str, to_concept: Optional[str] = None):
+@requires_auth(ANNO_SESSION)
+def create_box(box_json, observation_uuid: str, to_concept: Optional[str] = None) -> Optional[dict]:
     """
     Creates an association for a box in VARS
     :param box_json: JSON of bounding box data
@@ -244,20 +255,21 @@ def create_box(box_json, observation_uuid: str, to_concept: Optional[str] = None
     if to_concept is not None:
         request_data['to_concept'] = to_concept
 
-    token = check_auth()
+    try:
+        response = ANNO_SESSION.post(
+            endpoints.Annosaurus.ASSOCIATION,
+            data=request_data,
+        )
+        response.raise_for_status()
+        
+        return response.json()
+    except Exception as e:
+        utils.log('Box creation failed.', level=2)
+        utils.log(e, level=2)
 
-    response = session.post(
-        util.utils.get_property('endpoints', 'assoc'),
-        data=request_data,
-        headers={
-            'Authorization': 'BEARER {}'.format(token)
-        }
-    )
-    return response.json()
 
-
-@auth_retry('Box modification failed.')
-def modify_box(box_json, observation_uuid: str, association_uuid: str, retry=True):
+@requires_auth(ANNO_SESSION)
+def modify_box(box_json, observation_uuid: str, association_uuid: str) -> Optional[dict]:
     """
     Modifies a box with a given association_uuid
     :param box_json: JSON of bounding box data
@@ -266,8 +278,6 @@ def modify_box(box_json, observation_uuid: str, association_uuid: str, retry=Tru
     :param retry: Retry after authentication failure
     :return: HTTP response JSON if success, else None
     """
-    token = check_auth()
-
     request_data = {
         'observation_uuid': observation_uuid,
         'link_name': 'bounding box',
@@ -275,49 +285,54 @@ def modify_box(box_json, observation_uuid: str, association_uuid: str, retry=Tru
         'mime_type': 'application/json'
     }
 
-    response = session.put(
-        util.utils.get_property('endpoints', 'assoc') + '/{}'.format(association_uuid),
-        data=request_data,
-        headers={
-            'Authorization': 'BEARER {}'.format(token)
-        }
-    )
-    return response.json()
+    try:
+        response = ANNO_SESSION.put(
+            endpoints.Annosaurus.ASSOCIATION + '/' + association_uuid,
+            data=request_data
+        )
+        response.raise_for_status()
+        
+        return response.json()
+    except Exception as e:
+        utils.log('Box modification failed.', level=2)
+        utils.log(e, level=2)
 
 
-@auth_retry('Box deletion failed.')
-def delete_box(association_uuid: str, retry=True):
+@requires_auth(ANNO_SESSION)
+def delete_box(association_uuid: str):
     """
     Deletes a box with a given association_uuid
     :param association_uuid: UUID in associations table to delete
     :param retry: Retry after authentication failure
     :return: HTTP response if success, else None
     """
-    token = check_auth()
+    try:
+        response = ANNO_SESSION.delete(
+            endpoints.Annosaurus.ASSOCIATION + '/' + association_uuid
+        )
+        response.raise_for_status()
+        
+        return response
+    except Exception as e:
+        utils.log('Box deletion failed.', level=2)
+        utils.log(e, level=2)
 
-    response = session.delete(
-        util.utils.get_property('endpoints', 'assoc') + '/{}'.format(association_uuid),
-        headers={
-            'Authorization': 'BEARER {}'.format(token)
-        }
-    )
-    return response
 
-
-def fetch_image(url: str) -> QPixmap:
+def fetch_image(url: str) -> Optional[QPixmap]:
     """
     Fetch an image from a URL and represent it as a pixmap
     :param url: URL of image
     :return: Pixmap item representing image if valid url, else None
     """
-    pixmap = QPixmap()
     try:
-        image_contents = session.get(url).content
-        pixmap.loadFromData(image_contents)
+        response = DEFAULT_SESSION.get(url)
+        response.raise_for_status()
+        
+        pixmap = QPixmap()
+        pixmap.loadFromData(response.content)
+        return pixmap
     except Exception as e:
-        util.utils.log('Could not fetch image at {}'.format(url), level=1)
-        pixmap = None
-    return pixmap
+        utils.log('Could not fetch image at {}'.format(url), level=1)
 
 
 def get_all_users() -> list:
@@ -325,8 +340,8 @@ def get_all_users() -> list:
     Get a list of all available VARS users
     :return: list of all VARS users
     """
-    response = session.get(
-        util.utils.get_property('endpoints', 'users')
+    response = DEFAULT_SESSION.get(
+        endpoints.VARSUserServer.ALL_USERS
     )
     response_json = response.json()
     return response_json
@@ -338,8 +353,8 @@ def get_other_videos(video_reference_uuid: str) -> list:
     :param video_reference_uuid: Base video reference UUID
     :return: List of all concurrent video reference UUIDs
     """
-    response = session.get(
-        util.utils.get_property('endpoints', 'concurrent_videos') + '/{}'.format(video_reference_uuid)
+    response = DEFAULT_SESSION.get(
+        endpoints.VampireSquid.CONCURRENT_VIDEOS + '/' + video_reference_uuid
     )
     response_json = response.json()
     return [ref['video_reference_uuid'] for ref in response_json]
@@ -359,8 +374,8 @@ def get_windowed_moments(video_reference_uuids: list, imaged_moment_uuid: str, t
         'window': time_window
     }
 
-    response = session.post(
-        util.utils.get_property('endpoints', 'window_request'),
+    response = ANNO_SESSION.post(
+        endpoints.Annosaurus.WINDOW_REQUEST,
         data=json.dumps(request_data),
         headers={
             'Content-Type': 'application/json'
@@ -371,8 +386,8 @@ def get_windowed_moments(video_reference_uuids: list, imaged_moment_uuid: str, t
     return response_json
 
 
-@auth_retry('Observation renaming failed.')
-def modify_concept(observation_uuid: str, new_concept: str, observer: str, retry=True):
+@requires_auth(ANNO_SESSION)
+def rename_observation(observation_uuid: str, new_concept: str, observer: str):
     """
     Rename an observation
     :param observation_uuid: Observation UUID to rename
@@ -381,21 +396,22 @@ def modify_concept(observation_uuid: str, new_concept: str, observer: str, retry
     :param retry: Retry after authentication failure
     :return: HTTP response if success, else None
     """
-    token = check_auth()
-
     request_data = {
         'concept': new_concept,
         'observer': observer
     }
 
-    response = session.put(
-        util.utils.get_property('endpoints', 'observation') + '/{}'.format(observation_uuid),
-        data=request_data,
-        headers={
-            'Authorization': 'BEARER {}'.format(token)
-        }
-    )
-    return response.json()
+    try:
+        response = ANNO_SESSION.put(
+            endpoints.Annosaurus.OBSERVATION + '/' + observation_uuid,
+            data=request_data
+        )
+        response.raise_for_status()
+        
+        return response.json()
+    except Exception as e:
+        utils.log('Concept rename failed.', level=2)
+        utils.log(e, level=2)
 
 
 def get_video_data(video_reference_uuid: str):
@@ -404,14 +420,16 @@ def get_video_data(video_reference_uuid: str):
     :param video_reference_uuid: Video reference UUID to lookup
     :return: JSON data if valid UUID, else None
     """
-    response = session.get(
-        util.utils.get_property('endpoints', 'video_data') + '/{}'.format(video_reference_uuid),
-    )
+    try:
+        response = DEFAULT_SESSION.get(
+            endpoints.VampireSquid.VIDEO_DATA + '/' + video_reference_uuid
+        )
+        response.raise_for_status()
 
-    if response.status_code == 200:
         return response.json()
-
-    return None
+    except Exception as e:
+        utils.log('Could not fetch video data for {}'.format(video_reference_uuid), level=1)
+        utils.log(e, level=1)
 
 
 def get_imaged_moments_by_image_reference(image_reference_uuid: str):
@@ -420,11 +438,13 @@ def get_imaged_moments_by_image_reference(image_reference_uuid: str):
     :param image_reference_uuid: Image reference UUID
     :return : JSON data if valid UUID, else None
     """
-    response = session.get(
-        util.utils.get_property('endpoints', 'observation') + '/imagereference/' + image_reference_uuid.lower(),
-    )
-
-    if response.status_code == 200:
+    try:
+        response = DEFAULT_SESSION.get(
+            endpoints.Annosaurus.IMAGED_MOMENTS_BY_IMAGE_REFERENCE + '/' + image_reference_uuid
+        )
+        response.raise_for_status()
+        
         return response.json()
-
-    return None
+    except Exception as e:
+        utils.log('Could not fetch imaged moment data for image reference {}'.format(image_reference_uuid), level=1)
+        utils.log(e, level=1)

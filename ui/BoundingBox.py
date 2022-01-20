@@ -5,7 +5,7 @@ from PyQt5.QtCore import Qt, QRectF, QPoint, QSizeF, QRect, QPointF
 from PyQt5.QtGui import QColor, QPainter, QPen, QFont
 from PyQt5.QtWidgets import QGraphicsItem, QStyleOptionGraphicsItem, QWidget
 
-import util.requests
+import util.m3
 import util.utils
 
 __author__ = "Kevin Barnard"
@@ -43,7 +43,7 @@ class SourceBoundingBox(QRect):
         self.strength = strength
 
     def set_label(self, label):
-        if label in util.requests.get_all_concepts():
+        if label in util.m3.get_all_concepts():
             self.label = label
 
     def get_json(self):

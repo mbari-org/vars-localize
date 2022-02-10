@@ -138,14 +138,14 @@ class GraphicsBoundingBox(QGraphicsItem):
         """
         pen = QPen(self.color.lighter(), 4 if self.highlighted else 2)
         painter.setPen(pen)
-        painter.drawRect(0, 0, self.width, self.height)
+        painter.drawRect(0, 0, int(self.width), int(self.height))
 
         painter.setFont(QFont('Helvetica', 12, QFont.Bold))
         draw_text = self.label if self.label else 'No label'
         if self.source.part is not None and self.source.part != 'self':
             draw_text += ' ' + self.source.part
-        painter.drawText(0, self.height,
-                         self.width, 20,
+        painter.drawText(0, int(self.height),
+                         int(self.width), 20,
                          Qt.AlignCenter | Qt.TextDontClip,
                          draw_text)
 

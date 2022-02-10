@@ -283,8 +283,8 @@ class ImageView(QGraphicsView):
         :return: Point relative to the scene
         """
         return QPoint(
-            self.pixmap_scalar * pt.x() + self.pixmap_pos.x(),
-            self.pixmap_scalar * pt.y() + self.pixmap_pos.y()
+            int(self.pixmap_scalar * pt.x() + self.pixmap_pos.x()),
+            int(self.pixmap_scalar * pt.y() + self.pixmap_pos.y())
         )
 
     def show_box_properties_dialog(self, box: GraphicsBoundingBox):
@@ -545,7 +545,7 @@ class ImageView(QGraphicsView):
             if corner_box:
                 self.pt_1 = None
                 x, y, _, _ = corner_box.getRect()
-                corner = self.get_im_rel_point(QPoint(x, y))
+                corner = self.get_im_rel_point(QPoint(int(x), int(y)))
                 self.resize_offset = self.hov_pt_1 - corner
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
@@ -561,28 +561,28 @@ class ImageView(QGraphicsView):
                     self.hovered_box.setTopLeft(new_tl_corner)
                 elif self.resize_type == 2:
                     new_tr_corner = (self.pt_2 - self.resize_offset).toPoint()
-                    new_tr_corner.setX(new_tr_corner.x() + 2 * self.resize_offset.x())
+                    new_tr_corner.setX(int(new_tr_corner.x() + 2 * self.resize_offset.x()))
                     if new_tr_corner.x() > self.pixmap_src.width():
-                        new_tr_corner.setX(self.pixmap_src.width())
+                        new_tr_corner.setX(int(self.pixmap_src.width()))
                     if new_tr_corner.y() < 0:
                         new_tr_corner.setY(0)
                     self.hovered_box.setTopRight(new_tr_corner)
                 elif self.resize_type == 3:
                     new_bl_corner = (self.pt_2 - self.resize_offset).toPoint()
-                    new_bl_corner.setY(new_bl_corner.y() + 2 * self.resize_offset.y())
+                    new_bl_corner.setY(int(new_bl_corner.y() + 2 * self.resize_offset.y()))
                     if new_bl_corner.x() < 0:
                         new_bl_corner.setX(0)
                     if new_bl_corner.y() > self.pixmap_src.height():
-                        new_bl_corner.setY(self.pixmap_src.height())
+                        new_bl_corner.setY(int(self.pixmap_src.height()))
                     self.hovered_box.setBottomLeft(new_bl_corner)
                 elif self.resize_type == 4:
                     new_br_corner = (self.pt_2 - self.resize_offset).toPoint()
-                    new_br_corner.setX(new_br_corner.x() + 2 * self.resize_offset.x())
-                    new_br_corner.setY(new_br_corner.y() + 2 * self.resize_offset.y())
+                    new_br_corner.setX(int(new_br_corner.x() + 2 * self.resize_offset.x()))
+                    new_br_corner.setY(int(new_br_corner.y() + 2 * self.resize_offset.y()))
                     if new_br_corner.x() > self.pixmap_src.width():
-                        new_br_corner.setX(self.pixmap_src.width())
+                        new_br_corner.setX(int(self.pixmap_src.width()))
                     if new_br_corner.y() > self.pixmap_src.height():
-                        new_br_corner.setY(self.pixmap_src.height())
+                        new_br_corner.setY(int(self.pixmap_src.height()))
                     self.hovered_box.setBottomRight(new_br_corner)
 
         self.mouse_hline.setLine(0, event.y(), self.scene().width(), event.y())

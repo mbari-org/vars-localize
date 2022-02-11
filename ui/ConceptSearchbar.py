@@ -1,5 +1,5 @@
 # ConceptSearchbar.py (vars-localize)
-import util.requests
+import util.m3
 
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
@@ -28,7 +28,7 @@ class ConceptSearchbar(QLineEdit):
 
         self.setPlaceholderText('Search for concept')
 
-        self.concept_completer = QCompleter(util.requests.get_all_concepts())
+        self.concept_completer = QCompleter(util.m3.get_all_concepts())
         self.concept_completer.setCaseSensitivity(Qt.CaseInsensitive)
         self.setCompleter(self.concept_completer)
 

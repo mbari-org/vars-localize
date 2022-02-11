@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QDialog, QVBoxLayout,
 from ui.BoundingBox import BoundingBoxManager, GraphicsBoundingBox, SourceBoundingBox
 from ui.PropertiesDialog import PropertiesDialog
 from util import utils
-from util.requests import delete_box, create_box, modify_box, create_observation, fetch_image, \
+from util.m3 import delete_box, create_box, modify_box, create_observation, fetch_image, \
     get_all_parts, get_video_data
 
 __author__ = "Kevin Barnard"

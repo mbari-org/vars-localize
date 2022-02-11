@@ -3,6 +3,7 @@ import os
 import sys
 
 from ui.EntryTree import EntryTreeItem
+from ui.LoginDialog import LoginDialog
 
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
@@ -27,7 +28,7 @@ from ui.ConceptEntry import ConceptEntry
 from ui.DisplayPanel import DisplayPanel
 from ui.SearchPanel import SearchPanel
 
-from util.requests import check_connection, get_all_users, get_imaged_moments_by_image_reference
+from util.m3 import check_connection, get_all_users, get_imaged_moments_by_image_reference
 from util.utils import log, split_comma_list
 
 
@@ -47,6 +48,11 @@ class AppWindow(QMainWindow):
                                  'You are not connected to M3. Check your internet connection and/or VPN.')
             exit(1)
         log('Connected.')
+        
+        login_ok = self.login()
+        if not login_ok:
+            log('You must log in to use this tool.', level=2)
+            exit(1)
 
         self.central_container = QWidget()
         self.central_container.setLayout(QHBoxLayout())
@@ -62,11 +68,12 @@ class AppWindow(QMainWindow):
         self.admin_mode = False
 
         self.setCentralWidget(self.central_container)
+        
+        # Add admin menu if available to user
+        if self.observer_role in ('Maint', 'Admin'):
+            self.add_admin_menu()
 
-        self.login()
-        if not self.observer:
-            log('You must login to use this tool.', level=2)
-            exit(1)
+        self.add_search_menu()
 
         self.display_panel.image_view.observer = self.observer
         self.display_panel.image_view.select_next = self.search_panel.select_next
@@ -89,48 +96,45 @@ class AppWindow(QMainWindow):
         Prompt for observer login
         :return: None
         """
-        login_dialog = QDialog()
-        login_dialog.setModal(True)
-        login_dialog.setWindowTitle('Login')
-
-        login_dialog.setLayout(QVBoxLayout())
-
-        form_widget = QWidget()
-        form = QFormLayout()
-        form_widget.setLayout(form)
-        observer_field = QLineEdit()
-        all_valid_users = get_all_users()
-        users_dict = {user_data['username']: user_data for user_data in all_valid_users}
-        observer_completer = QCompleter(users_dict.keys())
-        observer_completer.setCaseSensitivity(Qt.CaseInsensitive)
-        observer_field.setCompleter(observer_completer)
-
-        login_button = QPushButton('Login')
-        login_button.setEnabled(False)
-        login_button.pressed.connect(login_dialog.close)
-
-        def observer_field_updated(text):
-            nonlocal login_button
-            if text in users_dict:
-                self.observer = text
-                self.observer_role = users_dict[text]['role']
-                login_button.setEnabled(True)
-            else:
-                login_button.setEnabled(False)
-
-        observer_field.textChanged.connect(observer_field_updated)
-
-        form.addRow('Observer: ', observer_field)
-
-        login_dialog.layout().addWidget(form_widget)
-        login_dialog.layout().addWidget(login_button)
-
-        login_dialog.exec_()
-
-        if self.observer_role in ('Maint', 'Admin'):
-            self.add_admin_menu()
-
-        self.add_search_menu()
+        login_dialog = LoginDialog(parent=self)
+        ok = login_dialog.exec()
+        
+        if ok:
+            # Get the username/password from the dialog
+            username, password = login_dialog.credentials
+            
+            # Set up the M3 configuration, returning False if login fails
+            if not self.configure_m3(username, password):
+                return False
+            
+            all_valid_users = get_all_users()
+            users_dict = {user_data['username']: user_data for user_data in all_valid_users}
+            
+            # Set the observer and role
+            self.observer = username
+            self.observer_role = users_dict[username]['role']
+        else:  # Login cancel, return failure
+            return False
+        
+        return True  # Return success
+    
+    def configure_m3(self, username, password) -> bool:
+        """
+        Configure endpoints and set up Annosaurus auth
+        """
+        from util.endpoints import configure as configure_endpoints
+        from util.m3 import configure_anno_session
+        
+        try:
+            configure_endpoints(username, password)
+        except Exception as e:
+            log('Login failed.', level=2)
+            log(e, level=2)
+            return False
+        
+        configure_anno_session()
+        
+        return True
 
     def add_admin_menu(self):
         """

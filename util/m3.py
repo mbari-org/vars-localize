@@ -448,3 +448,21 @@ def get_imaged_moments_by_image_reference(image_reference_uuid: str):
     except Exception as e:
         utils.log('Could not fetch imaged moment data for image reference {}'.format(image_reference_uuid), level=1)
         utils.log(e, level=1)
+
+
+def get_annotations_by_video_refernce(video_reference_uuid: str):
+    """
+    Get annotations for a particular video reference UUID
+    :param video_reference_uuid: Video reference UUID
+    :return: JSON data if valid UUID, else None
+    """
+    try:
+        response = DEFAULT_SESSION.get(
+            endpoints.Annosaurus.ANNOTATIONS_BY_VIDEO_REFERENCE + '/' + video_reference_uuid
+        )
+        response.raise_for_status()
+        
+        return response.json()
+    except Exception as e:
+        utils.log('Could not fetch annotation data for video reference {}'.format(video_reference_uuid), level=1)
+        utils.log(e, level=1)

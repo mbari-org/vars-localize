@@ -28,7 +28,7 @@ from ui.ConceptEntry import ConceptEntry
 from ui.DisplayPanel import DisplayPanel
 from ui.SearchPanel import SearchPanel
 
-from util.m3 import check_connection, get_all_users, get_imaged_moments_by_image_reference
+from util.m3 import check_connection, get_all_users, get_annotations_by_video_refernce, get_imaged_moments_by_image_reference
 from util.utils import log, split_comma_list
 
 
@@ -192,6 +192,25 @@ class AppWindow(QMainWindow):
         search_image_reference_action = QAction('Image Reference UUID', search_menu)
         search_image_reference_action.triggered.connect(search_image_reference)
         search_menu.addAction(search_image_reference_action)
+
+        def search_video_reference():
+            video_reference_uuid, ok = QInputDialog.getText(self, 'Video Reference UUID Search', 'Video Reference UUID')
+            if ok:
+                res = get_annotations_by_video_refernce(video_reference_uuid)
+                if res:
+                    imaged_moment_uuids = list(set(item['imaged_moment_uuid'] for item in res if item.get('image_references', [])))
+                    
+                    # Set the UUIDs and load the first page
+                    self.search_panel.set_uuids(imaged_moment_uuids)
+                    self.search_panel.load_page()
+                else:
+                    # No results, warning dialog
+                    QMessageBox.warning(self, 'No Results', 'No results found for video reference UUID: {}'.format(video_reference_uuid))
+        
+        search_video_reference_action = QAction('Video Reference UUID', search_menu)
+        search_video_reference_action.triggered.connect(search_video_reference)
+        search_menu.addAction(search_video_reference_action)
+                    
 
     def closeEvent(self, a0: QCloseEvent) -> None:
         """

@@ -92,6 +92,7 @@ class Annosaurus(metaclass=ConfigEndpoint):
     DELETE_OBSERVATION = '/observations'
     IMAGED_MOMENTS_BY_CONCEPT = '/fast/imagedmoments/concept/images'
     IMAGED_MOMENTS_BY_IMAGE_REFERENCE = '/annotations/imagereference'
+    ANNOTATIONS_BY_VIDEO_REFERENCE = '/fast/videoreference'
 
 
 class VARSKBServer(metaclass=ConfigEndpoint):

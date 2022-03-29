@@ -38,6 +38,8 @@ class LoginDialog(QtWidgets.QDialog):
     def __init__(self, parent=None, completer=None):
         super().__init__(parent)
         
+        self.setWindowTitle('Login')
+        
         self._login_form = LoginDialog.LoginForm(self, completer)
         
         self._dialog_buttons = QtWidgets.QDialogButtonBox(

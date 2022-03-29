@@ -219,10 +219,10 @@ class ImageView(QGraphicsView):
         Draw ancillary data on the image, if there is any
         :return: None
         """
+        text_dict = {}
+        
         if 'ancillary_data' in self.moment.metadata.keys():
             ancillary_data = self.moment.metadata['ancillary_data']
-
-            text_dict = {}
 
             if 'depth_meters' in ancillary_data:
                 text_dict['Depth (m): {:<10.2f}'] = ancillary_data['depth_meters']
@@ -233,21 +233,23 @@ class ImageView(QGraphicsView):
             if 'longitude' in ancillary_data:
                 text_dict['Longitude: {:<10.3f}'] = ancillary_data['longitude']
 
-            if 'recorded_date' in self.moment.metadata.keys():
-                text_dict['Recorded: {:<20}'] = self.moment.metadata['recorded_date'].replace('T', ' ').replace('Z', '')
+        if 'recorded_date' in self.moment.metadata.keys():
+            text_dict['Recorded: {:<20}'] = self.moment.metadata['recorded_date'].replace('T', ' ').replace('Z', '')
 
-            if 'video_data' not in self.moment.metadata.keys():
-                video_data = get_video_data(self.moment.metadata['video_reference_uuid'])
-                self.moment.metadata['video_data'] = video_data
+        if 'video_data' not in self.moment.metadata.keys():
+            video_data = get_video_data(self.moment.metadata['video_reference_uuid'])
+            self.moment.metadata['video_data'] = video_data
 
-            if self.moment.metadata['video_data'] and 'uri' in self.moment.metadata['video_data']:
+        if self.moment.metadata['video_data'] and 'uri' in self.moment.metadata['video_data']:
+            uri = self.moment.metadata['video_data']['uri']
+            if uri.startswith('urn:'):
                 video_sequence_name = self.moment.metadata['video_data']['uri'].split(':')[-1]
                 text_dict['Video: {:<10}'] = video_sequence_name
 
-            text_str = ' '.join(k.format(v) for k, v in text_dict.items())
-            text_item = self.scene().addText(text_str, QFont('Courier New'))
-            text_item.setDefaultTextColor(QColor(255, 255, 255))
-            text_item.setPos(10, self.height() - text_item.boundingRect().height() - 10)
+        text_str = ' '.join(k.format(v) for k, v in text_dict.items())
+        text_item = self.scene().addText(text_str, QFont('Courier New'))
+        text_item.setDefaultTextColor(QColor(255, 255, 255))
+        text_item.setPos(10, self.height() - text_item.boundingRect().height() - 10)
 
     def draw_bounding_box(self, box_src: SourceBoundingBox, manager: BoundingBoxManager):
         """

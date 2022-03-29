@@ -1,4 +1,5 @@
 # AppWindow.py (vars-localize)
+from datetime import datetime
 import os
 import sys
 
@@ -198,7 +199,20 @@ class AppWindow(QMainWindow):
             if ok:
                 res = get_annotations_by_video_refernce(video_reference_uuid)
                 if res:
-                    imaged_moment_uuids = list(set(item['imaged_moment_uuid'] for item in res if item.get('image_references', [])))
+                    timestamp_uuid_tuples = set()
+                    for item in res:
+                        timestamp = datetime.now()
+                        if 'recorded_timestamp' in item:
+                            try:
+                                timestamp = datetime.strptime(item['recorded_timestamp'], '%Y-%m-%dT%H:%M:%S.%fZ')
+                            except:
+                                timestamp = datetime.strptime(item['recorded_timestamp'], '%Y-%m-%dT%H:%M:%SZ')
+                        
+                        timestamp_uuid_tuples.add((timestamp, item['imaged_moment_uuid']))
+                    
+                    # Sort by timestamp, then UUID
+                    timestamp_uuid_tuples = sorted(timestamp_uuid_tuples)
+                    imaged_moment_uuids = [item[1] for item in timestamp_uuid_tuples]
                     
                     # Set the UUIDs and load the first page
                     self.search_panel.set_uuids(imaged_moment_uuids)

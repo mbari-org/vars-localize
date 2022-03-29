@@ -458,7 +458,8 @@ def get_annotations_by_video_refernce(video_reference_uuid: str):
     """
     try:
         response = DEFAULT_SESSION.get(
-            endpoints.Annosaurus.ANNOTATIONS_BY_VIDEO_REFERENCE + '/' + video_reference_uuid
+            endpoints.Annosaurus.ANNOTATIONS_BY_VIDEO_REFERENCE + '/' + video_reference_uuid,
+            params={'data': True}
         )
         response.raise_for_status()
         

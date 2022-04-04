@@ -467,3 +467,22 @@ def get_annotations_by_video_refernce(video_reference_uuid: str):
     except Exception as e:
         utils.log('Could not fetch annotation data for video reference {}'.format(video_reference_uuid), level=1)
         utils.log(e, level=1)
+
+
+def get_video_by_video_reference_uuid(video_reference_uuid: str):
+    """
+    Get data for a video by a given video reference UUID
+    :param video_reference_uuid: Video reference UUID
+    :type video_reference_uuid: str
+    :return: JSON data if valid UUID, else None
+    """
+    try:
+        response = DEFAULT_SESSION.get(
+            endpoints.VampireSquid.VIDEO_BY_VIDEO_REFERENCE_UUID + '/' + video_reference_uuid
+        )
+        response.raise_for_status()
+        
+        return response.json()
+    except Exception as e:
+        utils.log('Could not fetch video data for video reference {}'.format(video_reference_uuid), level=1)
+        utils.log(e, level=1)

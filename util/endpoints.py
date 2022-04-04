@@ -113,3 +113,4 @@ class VampireSquid(metaclass=ConfigEndpoint):
 
     CONCURRENT_VIDEOS = '/media/concurrent'
     VIDEO_DATA = '/videoreferences'
+    VIDEO_BY_VIDEO_REFERENCE_UUID = '/videos/videoreference'

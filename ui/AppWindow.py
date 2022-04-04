@@ -75,6 +75,7 @@ class AppWindow(QMainWindow):
             self.add_admin_menu()
 
         self.add_search_menu()
+        self.add_video_menu()
 
         self.display_panel.image_view.observer = self.observer
         self.display_panel.image_view.select_next = self.search_panel.select_next
@@ -224,7 +225,20 @@ class AppWindow(QMainWindow):
         search_video_reference_action = QAction('Video Reference UUID', search_menu)
         search_video_reference_action.triggered.connect(search_video_reference)
         search_menu.addAction(search_video_reference_action)
-                    
+    
+    def add_video_menu(self):
+        """
+        Add the Video menu for video-level operations
+        """
+        main_menu = self.menuBar()
+        video_menu = main_menu.addMenu('&Video')
+        
+        def open_video():
+            self.search_panel.open_video()
+        
+        open_video_action = QAction('Open Video', video_menu)
+        open_video_action.triggered.connect(open_video)
+        video_menu.addAction(open_video_action)
 
     def closeEvent(self, a0: QCloseEvent) -> None:
         """

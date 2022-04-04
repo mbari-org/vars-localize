@@ -194,3 +194,11 @@ class SearchPanel(QDockWidget):
             moment = item.parent()
             self.entry_tree.load_imaged_moment_entry(moment)
             self.parent().display_panel.image_view.set_entry(moment)
+    
+    def open_video(self):
+        # Get current item
+        current_item: EntryTreeItem = self.entry_tree.currentItem()
+        
+        # Open the video
+        if current_item:
+            self.entry_tree.open_video_for_item(current_item)

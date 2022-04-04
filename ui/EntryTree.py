@@ -1,5 +1,9 @@
 # EntryTree.py (vars-localize)
+from datetime import datetime, timedelta
+from http.client import HTTPException
+import json
 from typing import List
+import webbrowser
 from PyQt5 import QtCore
 from PyQt5.QtGui import QFont, QBrush, QColor, QKeyEvent
 from PyQt5.QtWidgets import QProgressDialog, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QDialog, QMessageBox, QHeaderView, \
@@ -7,7 +11,7 @@ from PyQt5.QtWidgets import QProgressDialog, QTreeWidget, QTreeWidgetItem, QAbst
 from qdarkstyle.dark.palette import DarkPalette
 
 from util.m3 import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments, \
-    delete_observation
+    delete_observation, get_video_by_video_reference_uuid
 from util.utils import extract_bounding_boxes, log
 
 __author__ = "Kevin Barnard"
@@ -275,6 +279,82 @@ class ImagedMomentTree(EntryTree):
             associations = current.metadata['associations']
             assoc_lines = ['{} | {} | {}'.format(assoc['link_name'], assoc['to_concept'], assoc['link_value']) for assoc in associations if assoc['link_name'] != 'bounding box']
             self.parent().parent().association_text.setText('\n'.join(assoc_lines))
+    
+    def open_video_for_item(self, item: EntryTreeItem) -> bool:
+        """
+        Open the video for a given item in a web browser
+        :param item: Item to open video
+        :return: True if video opened, False if not
+        """
+        if item.metadata['type'] == 'imaged_moment':
+            im_item = item
+        elif item.metadata['type'] == 'observation':
+            im_item = item.parent()
+        
+        video_reference_uuid = im_item.metadata.get('video_reference_uuid', None)
+        if not video_reference_uuid:
+            QMessageBox.warning(self, 'No video reference', 'No video reference found for this imaged moment')
+            return False
+    
+        # Get the video corresponding to the given video reference UUID from M3
+        try:
+            video_data = get_video_by_video_reference_uuid(video_reference_uuid)
+        except HTTPException:
+            QMessageBox.warning(self, 'Failed to fetch video', 'Failed to fetch video data from M3')
+            return False
+        
+        # Extract the relevant info from the video data
+        video_references = video_data['video_references']
+        video_start_timestamp = video_data.get('start_timestamp', None)
+        if not video_start_timestamp:
+            QMessageBox.warning(self, 'No video start timestamp', 'No video start timestamp found for this video reference')
+            return False
+        
+        # Parse video start timestamp into datetime object
+        video_start_datetime = None
+        try:
+            video_start_datetime = datetime.strptime(video_start_timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')
+        except:
+            video_start_datetime = datetime.strptime(video_start_timestamp, '%Y-%m-%dT%H:%M:%SZ')
+        
+        # Parse the annotation timestamp into a timedelta object
+        annotation_timedelta = None
+        if 'recorded_date' in im_item.metadata:
+            recorded_timestamp = im_item.metadata['recorded_date']
+            recorded_datetime = None
+            try:
+                recorded_datetime = datetime.strptime(recorded_timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')
+            except:
+                recorded_datetime = datetime.strptime(recorded_timestamp, '%Y-%m-%dT%H:%M:%SZ')
+            annotation_timedelta = recorded_datetime - video_start_datetime
+        elif 'timecode' in im_item.metadata:
+            hours, minutes, seconds, frames = map(int, im_item.metadata['timecode'].split(':'))
+            annotation_timedelta = timedelta(hours=hours, minutes=minutes, seconds=seconds)
+        elif 'elapsed_time_millis' in im_item.metadata:
+            elapsed_time_millis = int(im_item.metadata['elapsed_time_millis'])
+            annotation_timedelta = timedelta(milliseconds=elapsed_time_millis)
+        else:
+            QMessageBox.warning(self, 'No annotation timestamp', 'No annotation timestamp found for this imaged moment')
+            return False
+        
+        # Find an HTTP MP4 video URL from the video references
+        video_url = None
+        for video_reference in video_references:
+            video_uri = video_reference.get('uri', None)
+            if not video_uri:
+                continue
+            
+            if video_uri.startswith('http') and video_uri.endswith('.mp4'):
+                video_url = video_uri
+                break
+        else:
+            QMessageBox.warning(self, 'No valid video URL', 'No valid video URL found for this video reference')
+            return False
+        
+        # Format the video URL to include the start/end times
+        annotation_seconds = annotation_timedelta.total_seconds()
+        video_url_fragment = video_url + '#t={},{}'.format(annotation_seconds, annotation_seconds + 1e-3)
+        webbrowser.open(video_url_fragment)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if self.parent().parent().parent().admin_mode and event.key() == QtCore.Qt.Key_Delete:

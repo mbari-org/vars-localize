@@ -50,6 +50,10 @@ class AppWindow(QMainWindow):
             exit(1)
         log('Connected.')
         
+        self.observer = None
+        self.observer_role = None
+        self.admin_mode = False
+        
         login_ok = self.login()
         if not login_ok:
             log('You must log in to use this tool.', level=2)
@@ -63,10 +67,6 @@ class AppWindow(QMainWindow):
 
         self.display_panel = DisplayPanel(parent=self)
         self.central_container.layout().addWidget(self.display_panel)
-
-        self.observer = None
-        self.observer_role = None
-        self.admin_mode = False
 
         self.setCentralWidget(self.central_container)
         

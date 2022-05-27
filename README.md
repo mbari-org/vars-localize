@@ -1,46 +1,30 @@
 # vars-localize
-Tool for creating localizations within the VARS database.
+**VARS Localize** is a tool for creating and editing bounding box localizations for VARS annotations.
 
 Author: Kevin Barnard ([kbarnard@mbari.org](mailto:kbarnard@mbari.org))
 
-This project is made with [PyQt5](https://pypi.org/project/PyQt5/).
+This project is made with [PyQt5](https://pypi.org/project/PyQt5/) and built with [Poetry](https://python-poetry.org/).
 
-## Setup
+## Install
 
-Installation of requirements is managed either by Anaconda or pip.
+VARS Localize is available on PyPI as [vars-localize](https://pypi.org/project/vars-localize/) and can be installed with pip:
 
-### Using Anaconda (**recommended**)
-
-#### 1. Create an environment
-
-From the root directory, run:
-```bash
-conda env create -f environment.yml
+```
+pip install vars-localize
 ```
 
-This will create an Anaconda environment named `vars-localize` with all required dependencies.
+Alternatively, if you want to build and install from source, you can use Poetry:
 
-#### 2. Activate the environment
-
-To activate the environment, run:
-
-```bash
-conda activate vars-localize
 ```
-
-### Using pip (Python >= 3.7)
-
-To install the required Python packages in your active Python environment, run:
-
-```bash
-pip install -r requirements.txt
+poetry install
 ```
 
 ## Usage
 
-To start the application, run:
-```bash
-python vars-localize.py
+Once installed, you can use VARS Localize by running the following command:
+
+```
+vars-localize
 ```
 
 Once the application launches, log in with your VARS username and password.

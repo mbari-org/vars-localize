@@ -14,6 +14,9 @@ class LoginDialog(QtWidgets.QDialog):
         def __init__(self, parent=None, completer=None):
             super().__init__(parent)
             
+            # Set minimum window size
+            self.setMinimumWidth(250)
+            
             self._username_line_edit = QtWidgets.QLineEdit()
             if completer is not None:
                 self._username_line_edit.setCompleter(completer)

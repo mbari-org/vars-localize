@@ -1,46 +1,30 @@
-# AppWindow.py (vars-localize)
 from datetime import datetime
-import os
-import sys
 
-from ui.EntryTree import EntryTreeItem
-from ui.LoginDialog import LoginDialog
-
-__author__ = "Kevin Barnard"
-__copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
-__credits__ = ["MBARI"]
-__license__ = "GPL"
-__maintainer__ = "Kevin Barnard"
-__email__ = "kbarnard@mbari.org"
-__doc__ = '''
-
-Application Window.
-
-@author: __author__
-@status: __status__
-@license: __license__
-'''
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QCloseEvent, QIcon
-from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QDialog, QVBoxLayout, QFormLayout, QLineEdit, \
-    QPushButton, QCompleter, QMessageBox, QAction, QInputDialog
+from PyQt5.QtGui import QCloseEvent
+from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QMessageBox, QAction, QInputDialog
 
-from ui.ConceptEntry import ConceptEntry
-from ui.DisplayPanel import DisplayPanel
-from ui.SearchPanel import SearchPanel
-
-from util.m3 import check_connection, get_all_users, get_annotations_by_video_refernce, get_imaged_moments_by_image_reference
-from util.utils import log, split_comma_list
+from vars_localize.lib.constants import APP_NAME
+from vars_localize.lib.m3 import check_connection, get_all_users, get_annotations_by_video_refernce, get_imaged_moments_by_image_reference
+from vars_localize.lib.utils import log, split_comma_list
+from vars_localize.ui.EntryTree import EntryTreeItem
+from vars_localize.ui.LoginDialog import LoginDialog
+from vars_localize.ui.DisplayPanel import DisplayPanel
+from vars_localize.ui.SearchPanel import SearchPanel
 
 
 class AppWindow(QMainWindow):
+    """
+    Application main window.
+    """
 
     def __init__(self, parent=None):
         super(AppWindow, self).__init__(parent)
 
-        self.setWindowTitle('VARS Localize')
-        self.setWindowIcon(QIcon('images/Icon.ico'))
+        # Set main window attributes
+        self.setWindowTitle(APP_NAME)
 
+        # Connect to M3
         log('Checking connection to M3...')
         if not check_connection():
             log('You are not connected to M3. Check your internet connection and/or VPN.', level=2)
@@ -50,6 +34,7 @@ class AppWindow(QMainWindow):
             exit(1)
         log('Connected.')
         
+        # Log in
         self.observer = None
         self.observer_role = None
         self.admin_mode = False
@@ -124,8 +109,8 @@ class AppWindow(QMainWindow):
         """
         Configure endpoints and set up Annosaurus auth
         """
-        from util.endpoints import configure as configure_endpoints
-        from util.m3 import configure_anno_session
+        from vars_localize.lib.endpoints import configure as configure_endpoints
+        from vars_localize.lib.m3 import configure_anno_session
         
         try:
             configure_endpoints(username, password)

@@ -1,36 +1,18 @@
-# SearchPanel.py (vars-localize)
-from PyQt5.QtGui import QColor
-
-from ui.EntryTree import ImagedMomentTree
-from ui.JSONTree import JSONTree
-from ui.Paginator import Paginator
-
-__author__ = "Kevin Barnard"
-__copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
-__credits__ = ["MBARI"]
-__license__ = "GPL"
-__maintainer__ = "Kevin Barnard"
-__email__ = "kbarnard@mbari.org"
-__doc__ = '''
-
-Dock widget used to search for concepts and select frame grabs.
-
-@author: __author__
-@status: __status__
-@license: __license__
-'''
 from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QDockWidget, QMessageBox, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QScrollArea, QTextEdit, QLabel, \
-    QSizePolicy, QDialog, QPushButton, QDialogButtonBox
+from PyQt5.QtWidgets import QDockWidget, QMessageBox, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QScrollArea, QLabel, QSizePolicy, QDialog, QPushButton, QDialogButtonBox
 
-from ui.ConceptSearchbar import ConceptSearchbar
-
-from util.m3 import get_all_concepts, delete_observation, get_imaged_moment_uuids, rename_observation
-
-from ui.EntryTree import EntryTreeItem
+from vars_localize.lib.m3 import get_all_concepts, delete_observation, get_imaged_moment_uuids, rename_observation
+from vars_localize.ui.ConceptSearchbar import ConceptSearchbar
+from vars_localize.ui.EntryTree import ImagedMomentTree
+from vars_localize.ui.JSONTree import JSONTree
+from vars_localize.ui.Paginator import Paginator
+from vars_localize.ui.EntryTree import EntryTreeItem
 
 
 class SearchPanel(QDockWidget):
+    """
+    Dock widget used to search for concepts and select frame grabs.
+    """
 
     def __init__(self, parent=None):
         super(SearchPanel, self).__init__(parent)

@@ -1,25 +1,12 @@
-# ConceptEntry.py (vars-localize)
 from PyQt5.QtCore import Qt
-
-__author__ = "Kevin Barnard"
-__copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
-__credits__ = ["MBARI"]
-__license__ = "GPL"
-__maintainer__ = "Kevin Barnard"
-__email__ = "kbarnard@mbari.org"
-__doc__ = '''
-
-Custom QListWidgetItem for displaying concept information
-
-@author: __author__
-@status: __status__
-@license: __license__
-'''
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import QListWidgetItem
 
 
 class ConceptEntry(QListWidgetItem):
+    """
+    Custom QListWidgetItem for displaying concept information
+    """
 
     def __init__(self, data=None, parent=None):
         super(ConceptEntry, self).__init__(parent)

@@ -1,27 +1,14 @@
-# PropertiesDialog.py (vars-localize)
-
-__author__ = "Kevin Barnard"
-__copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
-__credits__ = ["MBARI"]
-__license__ = "GPL"
-__maintainer__ = "Kevin Barnard"
-__email__ = "kbarnard@mbari.org"
-__doc__ = '''
-
-Dialog box for viewing/modifying bounding box properties.
-
-@author: __author__
-@status: __status__
-@license: __license__
-'''
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QPushButton
 
-from ui.BoundingBox import SourceBoundingBox
-from ui.PropertiesForm import PropertiesForm
+from vars_localize.ui.BoundingBox import SourceBoundingBox
+from vars_localize.ui.PropertiesForm import PropertiesForm
 
 
 class PropertiesDialog(QDialog):
+    """
+    Dialog box for viewing/modifying bounding box properties.
+    """
 
     def __init__(self, source: SourceBoundingBox, parent=None):
         super(PropertiesDialog, self).__init__(parent)

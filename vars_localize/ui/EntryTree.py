@@ -1,36 +1,21 @@
-# EntryTree.py (vars-localize)
+import webbrowser
 from datetime import datetime, timedelta
 from http.client import HTTPException
-import json
 from typing import List
-import webbrowser
+
 from PyQt5 import QtCore
-from PyQt5.QtGui import QFont, QBrush, QColor, QKeyEvent
-from PyQt5.QtWidgets import QProgressDialog, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QDialog, QMessageBox, QHeaderView, \
-    QAbstractScrollArea, QMenu, QAction, QApplication
+from PyQt5.QtGui import QFont, QColor, QKeyEvent
+from PyQt5.QtWidgets import QProgressDialog, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QMessageBox, QMenu, QAction, QApplication
 from qdarkstyle.dark.palette import DarkPalette
 
-from util.m3 import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments, \
-    delete_observation, get_video_by_video_reference_uuid
-from util.utils import extract_bounding_boxes, log
-
-__author__ = "Kevin Barnard"
-__copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
-__credits__ = ["MBARI"]
-__license__ = "GPL"
-__maintainer__ = "Kevin Barnard"
-__email__ = "kbarnard@mbari.org"
-__doc__ = '''
-
-Alternative view to entry list.
-
-@author: __author__
-@status: __status__
-@license: __license__
-'''
+from vars_localize.lib.m3 import get_imaged_moment, get_windowed_moments, delete_observation, get_video_by_video_reference_uuid
+from vars_localize.lib.utils import extract_bounding_boxes, log
 
 
 class EntryTreeItem(QTreeWidgetItem):
+    """
+    Alternative view to entry list.
+    """
 
     __slots__ = ['metadata']
 

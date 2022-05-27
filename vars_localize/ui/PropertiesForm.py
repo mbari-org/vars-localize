@@ -1,26 +1,13 @@
-# PropertiesForm.py (vars-localize)
-
-__author__ = "Kevin Barnard"
-__copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
-__credits__ = ["MBARI"]
-__license__ = "GPL"
-__maintainer__ = "Kevin Barnard"
-__email__ = "kbarnard@mbari.org"
-__doc__ = '''
-
-Form for inputting and displaying properties about localizations and annotations.
-
-@author: __author__
-@status: __status__
-@license: __license__
-'''
 from PyQt5.QtWidgets import QGroupBox, QFormLayout, QSpinBox, QLineEdit, QLabel
 
-from ui.BoundingBox import SourceBoundingBox
-from ui.ConceptSearchbar import ConceptSearchbar
+from vars_localize.ui.BoundingBox import SourceBoundingBox
+from vars_localize.ui.ConceptSearchbar import ConceptSearchbar
 
 
 class PropertiesForm(QGroupBox):
+    """
+    Form for inputting and displaying properties about localizations and annotations.
+    """
 
     def __init__(self, source: SourceBoundingBox, parent=None):
         super(PropertiesForm, self).__init__(parent)

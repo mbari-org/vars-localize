@@ -1,26 +1,13 @@
-# DisplayPanel.py (vars-localize)
-
-__author__ = "Kevin Barnard"
-__copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
-__credits__ = ["MBARI"]
-__license__ = "GPL"
-__maintainer__ = "Kevin Barnard"
-__email__ = "kbarnard@mbari.org"
-__doc__ = '''
-
-Container widget used do display images + localizations and process input.
-
-@author: __author__
-@status: __status__
-@license: __license__
-'''
 from PyQt5.QtWidgets import QWidget, QVBoxLayout
 
-from ui.ImageView import ImageView
-from ui.EntryTree import EntryTreeItem
+from vars_localize.ui.ImageView import ImageView
+from vars_localize.ui.EntryTree import EntryTreeItem
 
 
 class DisplayPanel(QWidget):
+    """
+    Container widget used do display images + localizations and process input.
+    """
 
     def __init__(self, parent=None):
         super(DisplayPanel, self).__init__(parent)

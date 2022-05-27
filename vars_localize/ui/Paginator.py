@@ -1,26 +1,13 @@
-# Paginator.py (vars-localize)
 from PyQt5 import QtGui
 from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QInputDialog
 
-__author__ = "Kevin Barnard"
-__copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
-__credits__ = ["MBARI"]
-__license__ = "GPL"
-__maintainer__ = "Kevin Barnard"
-__email__ = "kbarnard@mbari.org"
-__doc__ = '''
-
-Pagination controller widget.
-
-@author: __author__
-@status: __status__
-@license: __license__
-'''
-
 
 class Paginator(QWidget):
+    """
+    Pagination controller widget.
+    """
 
     left_signal = pyqtSignal()
     right_signal = pyqtSignal()

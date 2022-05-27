@@ -1,33 +1,19 @@
-# ImageView.py (vars-localize)
-from ui.ConceptSearchbar import ConceptSearchbar
-from ui.EntryTree import EntryTreeItem, update_imaged_moment_entry
 from PyQt5.QtCore import Qt, QPoint, QPointF, QRectF, QLineF
 from PyQt5.QtGui import QResizeEvent, QMouseEvent, QPixmap, QColor, QKeyEvent, QPen, QFont
 from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QDialog, QVBoxLayout, QPushButton, QInputDialog, QMessageBox
 
-from ui.BoundingBox import BoundingBoxManager, GraphicsBoundingBox, SourceBoundingBox
-from ui.PropertiesDialog import PropertiesDialog
-from util import utils
-from util.m3 import delete_box, create_box, modify_box, create_observation, fetch_image, \
-    get_all_parts, get_video_data
-
-__author__ = "Kevin Barnard"
-__copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
-__credits__ = ["MBARI"]
-__license__ = "GPL"
-__maintainer__ = "Kevin Barnard"
-__email__ = "kbarnard@mbari.org"
-__doc__ = '''
-
-QGraphicsView custom widget for controlling image/localization graphics and input.
-
-@author: __author__
-@status: __status__
-@license: __license__
-'''
+from vars_localize.ui.ConceptSearchbar import ConceptSearchbar
+from vars_localize.ui.EntryTree import EntryTreeItem, update_imaged_moment_entry
+from vars_localize.ui.BoundingBox import BoundingBoxManager, GraphicsBoundingBox, SourceBoundingBox
+from vars_localize.ui.PropertiesDialog import PropertiesDialog
+from vars_localize.lib import utils
+from vars_localize.lib.m3 import delete_box, create_box, modify_box, create_observation, fetch_image, get_all_parts, get_video_data
 
 
 class ImageView(QGraphicsView):
+    """
+    QGraphicsView custom widget for controlling image/localization graphics and input.
+    """
 
     def __init__(self, parent=None):
         super(ImageView, self).__init__(parent)

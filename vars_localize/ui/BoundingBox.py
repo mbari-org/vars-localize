@@ -1,31 +1,20 @@
-# BoundingBox.py (vars-localize)
+"""
+Bounding box data structure and manager helper class.
+"""
+
 import typing
 
 from PyQt5.QtCore import Qt, QRectF, QPoint, QSizeF, QRect, QPointF
 from PyQt5.QtGui import QColor, QPainter, QPen, QFont
 from PyQt5.QtWidgets import QGraphicsItem, QStyleOptionGraphicsItem, QWidget
 
-import util.m3
-import util.utils
-
-__author__ = "Kevin Barnard"
-__copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
-__credits__ = ["MBARI"]
-__license__ = "GPL"
-__maintainer__ = "Kevin Barnard"
-__email__ = "kbarnard@mbari.org"
-__doc__ = '''
-
-Bounding box data structure and manager helper class.
-
-@author: __author__
-@status: __status__
-@license: __license__
-'''
+from vars_localize.lib import m3, utils
 
 
 class SourceBoundingBox(QRect):
-    """ Bounding box VARS source data structure """
+    """
+    Bounding box VARS source data structure
+    """
 
     def __init__(self, box_json, label, observer, strength, observation_uuid=None, association_uuid=None, part=None):
         super(SourceBoundingBox, self).__init__(
@@ -43,7 +32,7 @@ class SourceBoundingBox(QRect):
         self.strength = strength
 
     def set_label(self, label):
-        if label in util.m3.get_all_concepts():
+        if label in m3.get_all_concepts():
             self.label = label
 
     def get_json(self):
@@ -61,7 +50,9 @@ class SourceBoundingBox(QRect):
 
 
 class GraphicsBoundingBox(QGraphicsItem):
-    """ Graphical bounding box representation """
+    """
+    Graphical bounding box representation
+    """
 
     def __init__(self, source: SourceBoundingBox):
         super(GraphicsBoundingBox, self).__init__()
@@ -95,7 +86,7 @@ class GraphicsBoundingBox(QGraphicsItem):
         :return: None
         """
         self.label = label
-        self.color.setHsv(*util.utils.n_split_hash(label, 1), 255, 255)
+        self.color.setHsv(*utils.n_split_hash(label, 1), 255, 255)
 
     def set_highlighted(self, highlighted: bool):
         """

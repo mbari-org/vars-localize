@@ -190,7 +190,8 @@ def create_observation(video_reference_uuid, concept, observer,
         'video_reference_uuid': video_reference_uuid,
         'concept': concept,
         'observer': observer,
-        'activity': 'localize'
+        'activity': 'localize',
+        'group': 'ROV:training-set'
     }
 
     if not (timecode or elapsed_time_millis or recorded_timestamp):

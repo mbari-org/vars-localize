@@ -27,7 +27,7 @@ Bounding box data structure and manager helper class.
 class SourceBoundingBox(QRect):
     """ Bounding box VARS source data structure """
 
-    def __init__(self, box_json, label, observer, strength, observation_uuid=None, association_uuid=None, part=None):
+    def __init__(self, box_json, label, observer=None, observation_uuid=None, association_uuid=None, part=None):
         super(SourceBoundingBox, self).__init__(
             box_json['x'],
             box_json['y'],
@@ -40,24 +40,26 @@ class SourceBoundingBox(QRect):
         self.part = part
         self.label = label
         self.observer = observer
-        self.strength = strength
 
     def set_label(self, label):
         if label in util.m3.get_all_concepts():
             self.label = label
 
     def get_json(self):
-        return {
+        d = {
             'x': self.x(),
             'y': self.y(),
             'width': self.width(),
             'height': self.height(),
-            'observer': self.observer,
-            'strength': self.strength,
             'generator': 'vars-localize',
-            'project': 'FathomNet',
             'image_reference_uuid': self.image_reference_uuid
         }
+        
+        if self.observer is not None:
+            d['observer'] = self.observer
+            d['strength'] = util.utils.get_observer_confidence(self.observer)
+        
+        return d
 
 
 class GraphicsBoundingBox(QGraphicsItem):

@@ -83,8 +83,7 @@ def extract_bounding_boxes(associations: list, concept: str, observation_uuid: s
             yield SourceBoundingBox(  # Create source box
                 box_json,
                 concept,
-                box_json['observer'],
-                box_json['strength'],
+                observer=box_json.get('observer', None),
                 observation_uuid=observation_uuid,
                 association_uuid=association['uuid'],
                 part=association['to_concept']

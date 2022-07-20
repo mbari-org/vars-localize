@@ -311,7 +311,6 @@ class ImageView(QGraphicsView):
         box_json_after = box.source.get_json()
         if box_json_after != box_json_before:
             box.source.observer = self.observer  # Update observer field
-            box.source.strength = utils.get_observer_confidence(box.source.observer)  # Update strength field
             modify_box(box_json_after, box.source.observation_uuid, box.source.association_uuid)  # Call modification request
             update_imaged_moment_entry(self.moment)  # Update tree
 

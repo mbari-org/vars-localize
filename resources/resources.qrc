@@ -1,0 +1,8 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource>
+        <file>icons/mbari_icon.ico</file>
+        <file>icons/arrow_left.ico</file>
+        <file>icons/arrow_right.ico</file>
+    </qresource>
+</RCC>

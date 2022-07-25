@@ -442,9 +442,10 @@ class ImageView(QGraphicsView):
         Fully reload the imaged moment.
         :return: None
         """
-        image = self.moment.metadata['cached_image']  # Backup image, so no re-fetch
+        image = self.moment.metadata.get('cached_image', None)  # Backup image, so no re-fetch
         self.moment.treeWidget().load_imaged_moment_entry(self.moment)  # Reload the tree
-        self.moment.metadata['cached_image'] = image
+        if image is not None:
+            self.moment.metadata['cached_image'] = image
         self.load_moment(self.moment)  # Reload imaged moment
 
     def handle_new_box(self, box: SourceBoundingBox):

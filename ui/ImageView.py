@@ -156,6 +156,14 @@ class ImageView(QGraphicsView):
             uuid = observation_entry.metadata['uuid']
             observation_entry.metadata['box_manager'] = BoundingBoxManager()  # Construct new bounding box manager
             observation_entry.metadata['box_manager'].set_box_click_callback(self.show_box_properties_dialog)
+            
+            def override_obs_selection(obs_entry):
+                def wrapped(_):
+                    self.parent().parent().parent().load_entry(obs_entry, None)
+                    self.parent().parent().parent().search_panel.select_entry(obs_entry)
+                return wrapped
+            
+            observation_entry.metadata['box_manager'].set_box_right_click_callback(override_obs_selection(observation_entry))
             self.enabled_observations[uuid] = True
 
     def draw_drag_corners(self, box: GraphicsBoundingBox):
@@ -607,7 +615,7 @@ class ImageView(QGraphicsView):
             self.pt_2 = None
             for uuid, enabled in self.enabled_observations.items():
                 if enabled:
-                    self.observation_map[uuid].metadata['box_manager'].check_box_click(event.pos())
+                    self.observation_map[uuid].metadata['box_manager'].check_box_click(event.pos(), event.button() == Qt.RightButton)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         self.redraw()

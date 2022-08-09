@@ -132,6 +132,9 @@ class SearchPanel(QDockWidget):
 
     def select_prev(self):
         self.entry_tree.setCurrentIndex(self.entry_tree.indexAbove(self.entry_tree.currentIndex()))
+    
+    def select_entry(self, item: EntryTreeItem):
+        self.entry_tree.setCurrentItem(item)
 
     def show_popup(self, item: EntryTreeItem, col: int):
         if item is None or item.metadata['type'] == 'imaged_moment':

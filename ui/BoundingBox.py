@@ -162,6 +162,7 @@ class BoundingBoxManager:
             self.bounding_boxes = []
 
         self.box_click_callback = None
+        self.box_right_click_callback = None
 
     def make_box(self, x, y, w, h, label, src):
         """
@@ -187,8 +188,16 @@ class BoundingBoxManager:
         :return: None
         """
         self.box_click_callback = func
+    
+    def set_box_right_click_callback(self, func):
+        """
+        Set the callback function for when the box is clicked
+        :param func: Callback function
+        :return: None
+        """
+        self.box_right_click_callback = func
 
-    def check_box_click(self, pt: QPoint):
+    def check_box_click(self, pt: QPoint, right_click: bool):
         """
         Check managed boxes for point containment, process callbacks
         :param pt: Point to process
@@ -201,7 +210,10 @@ class BoundingBoxManager:
                     selected_box = box
         if self.box_click_callback:
             if selected_box:
-                self.box_click_callback(selected_box)
+                if right_click:
+                    self.box_right_click_callback(selected_box)
+                else:
+                    self.box_click_callback(selected_box)
 
     def get_box_hovered(self, pt: QPoint):
         """

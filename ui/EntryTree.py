@@ -7,12 +7,13 @@ import webbrowser
 from PyQt5 import QtCore
 from PyQt5.QtGui import QFont, QBrush, QColor, QKeyEvent
 from PyQt5.QtWidgets import QProgressDialog, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QDialog, QMessageBox, QHeaderView, \
-    QAbstractScrollArea, QMenu, QAction, QApplication
+    QAbstractScrollArea, QMenu, QAction, QApplication, QVBoxLayout, QLabel, QDialogButtonBox
 from qdarkstyle.dark.palette import DarkPalette
 
 from util.m3 import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments, \
-    delete_observation, get_video_by_video_reference_uuid
+    delete_observation, get_video_by_video_reference_uuid, get_all_concepts, rename_observation
 from util.utils import extract_bounding_boxes, log
+from ui.ConceptSearchbar import ConceptSearchbar
 
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
@@ -357,18 +358,62 @@ class ImagedMomentTree(EntryTree):
         webbrowser.open(video_url_fragment)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        if self.parent().parent().parent().admin_mode and event.key() == QtCore.Qt.Key_Delete:
-            observations_to_delete = [el for el in self.selectedItems() if el.metadata['type'] == 'observation']
-            if not observations_to_delete:  # Ensure at least one observation selected
-                return
+        if self.parent().parent().parent().admin_mode:
+            if event.key() == QtCore.Qt.Key_Delete:
+                observations_to_delete = [el for el in self.selectedItems() if el.metadata['type'] == 'observation']
+                if not observations_to_delete:  # Ensure at least one observation selected
+                    return
 
-            observation_uuids = [obs.metadata['uuid'] for obs in observations_to_delete]
+                observation_uuids = [obs.metadata['uuid'] for obs in observations_to_delete]
 
-            # Show confirmation dialog
-            res = QMessageBox.warning(self, 'Confirm Observation Bulk Delete',
-                                      'Are you sure you want to delete the following observation(s)?\n\t' + '\n\t'.join(observation_uuids),
-                                      buttons=QMessageBox.Yes | QMessageBox.Cancel)
-            if res == QMessageBox.Yes:  # Do deletion and reload imaged moment
-                for observation_uuid in observation_uuids:
-                    delete_observation(observation_uuid)
-                self.parent().parent().parent().display_panel.image_view.reload_moment()
+                # Show confirmation dialog
+                res = QMessageBox.warning(self, 'Confirm Observation Bulk Delete',
+                                        'Are you sure you want to delete the following observation(s)?\n\t' + '\n\t'.join(observation_uuids),
+                                        buttons=QMessageBox.Yes | QMessageBox.Cancel)
+                if res == QMessageBox.Yes:  # Do deletion and reload imaged moment
+                    for observation_uuid in observation_uuids:
+                        delete_observation(observation_uuid)
+                    self.parent().parent().parent().display_panel.image_view.reload_moment()
+            elif event.key() == QtCore.Qt.Key.Key_R and event.modifiers() == QtCore.Qt.ControlModifier:
+                # Rename all selected observations
+                observations_to_rename = [el for el in self.selectedItems() if el.metadata['type'] == 'observation']
+                if not observations_to_rename:
+                    return
+                
+                observation_uuids = [obs.metadata['uuid'] for obs in observations_to_rename]
+                
+                # Show rename dialog
+                dialog = QDialog(self)
+                dialog.setWindowTitle('Rename Observations')
+                dialog_layout = QVBoxLayout()
+                dialog_layout.addWidget(QLabel('Enter new name for observation(s):'))
+                concept_searchbar = ConceptSearchbar(dialog)
+                dialog_layout.addWidget(concept_searchbar)
+                button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+                ok_button = button_box.button(QDialogButtonBox.Ok)
+                ok_button.setEnabled(False)
+                button_box.accepted.connect(dialog.accept)
+                button_box.rejected.connect(dialog.reject)
+                concept_to_set = None
+                def on_concept_update(concept: str):
+                    nonlocal concept_to_set
+                    valid = concept in get_all_concepts()
+                    ok_button.setEnabled(valid)
+                    if valid:
+                        concept_to_set = concept
+                concept_searchbar.set_callback(on_concept_update)
+                dialog_layout.addWidget(concept_searchbar)
+                dialog_layout.addWidget(button_box)
+                dialog.setLayout(dialog_layout)
+                result = dialog.exec()
+                
+                if result == QDialog.Accepted:
+                    confirmed = QMessageBox.warning(
+                        self, 'Confirm Observation Bulk Rename',
+                        f'Are you sure you want to rename the following observation(s) to {concept_to_set}?\n\t' + '\n\t'.join(observation_uuids),
+                        buttons=QMessageBox.Yes | QMessageBox.Cancel
+                    )
+                    if confirmed == QMessageBox.Yes:
+                        for observation_uuid in observation_uuids:
+                            rename_observation(observation_uuid, concept_to_set, self.parent().parent().parent().observer)
+                        self.parent().parent().parent().display_panel.image_view.reload_moment()

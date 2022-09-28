@@ -3,7 +3,7 @@ Tool for creating localizations within the VARS database.
 
 Author: Kevin Barnard ([kbarnard@mbari.org](mailto:kbarnard@mbari.org))
 
-This project is made with [PyQt5](https://pypi.org/project/PyQt5/).
+This project is made with [PyQt6](https://pypi.org/project/PyQt6/).
 
 ## Setup
 

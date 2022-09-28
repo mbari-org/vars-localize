@@ -14,8 +14,8 @@ Dialog box for viewing/modifying bounding box properties.
 @status: __status__
 @license: __license__
 '''
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QPushButton
+from PyQt6.QtGui import QPixmap
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QPushButton
 
 from ui.BoundingBox import SourceBoundingBox
 from ui.PropertiesForm import PropertiesForm

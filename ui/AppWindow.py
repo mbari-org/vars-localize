@@ -20,10 +20,10 @@ Application Window.
 @status: __status__
 @license: __license__
 '''
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QCloseEvent, QIcon
-from PyQt5.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QDialog, QVBoxLayout, QFormLayout, QLineEdit, \
-    QPushButton, QCompleter, QMessageBox, QAction, QInputDialog
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QCloseEvent, QIcon, QAction
+from PyQt6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QDialog, QVBoxLayout, QFormLayout, QLineEdit, \
+    QPushButton, QCompleter, QMessageBox, QInputDialog
 
 from ui.ConceptEntry import ConceptEntry
 from ui.DisplayPanel import DisplayPanel
@@ -63,7 +63,7 @@ class AppWindow(QMainWindow):
         self.central_container.setLayout(QHBoxLayout())
 
         self.search_panel = SearchPanel(parent=self)
-        self.addDockWidget(Qt.LeftDockWidgetArea, self.search_panel)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.search_panel)
 
         self.display_panel = DisplayPanel(parent=self)
         self.central_container.layout().addWidget(self.display_panel)

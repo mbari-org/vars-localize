@@ -1,5 +1,4 @@
 # ConceptEntry.py (vars-localize)
-from PyQt5.QtCore import Qt
 
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
@@ -15,8 +14,9 @@ Custom QListWidgetItem for displaying concept information
 @status: __status__
 @license: __license__
 '''
-from PyQt5.QtGui import QFont
-from PyQt5.QtWidgets import QListWidgetItem
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import QListWidgetItem
 
 
 class ConceptEntry(QListWidgetItem):
@@ -25,7 +25,7 @@ class ConceptEntry(QListWidgetItem):
         super(ConceptEntry, self).__init__(parent)
 
         self.setFont(QFont('Courier New'))
-        self.setTextAlignment(Qt.AlignHCenter)
+        self.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
 
         self.ann_data = data
         if data:

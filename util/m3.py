@@ -17,7 +17,7 @@ from typing import Optional
 
 import requests
 import requests.auth
-from PyQt5.QtGui import QPixmap
+from PyQt6.QtGui import QPixmap
 
 from util import endpoints, utils
 

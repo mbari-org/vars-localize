@@ -1,9 +1,9 @@
 # ImageView.py (vars-localize)
 from ui.ConceptSearchbar import ConceptSearchbar
 from ui.EntryTree import EntryTreeItem, update_imaged_moment_entry
-from PyQt5.QtCore import Qt, QPoint, QPointF, QRectF, QLineF
-from PyQt5.QtGui import QResizeEvent, QMouseEvent, QPixmap, QColor, QKeyEvent, QPen, QFont
-from PyQt5.QtWidgets import QGraphicsView, QGraphicsScene, QDialog, QVBoxLayout, QPushButton, QInputDialog, QMessageBox
+from PyQt6.QtCore import Qt, QPoint, QPointF, QRectF, QLineF
+from PyQt6.QtGui import QResizeEvent, QMouseEvent, QPixmap, QColor, QKeyEvent, QPen, QFont
+from PyQt6.QtWidgets import QGraphicsView, QGraphicsScene, QDialog, QVBoxLayout, QPushButton, QInputDialog, QMessageBox
 
 from ui.BoundingBox import BoundingBoxManager, GraphicsBoundingBox, SourceBoundingBox
 from ui.PropertiesDialog import PropertiesDialog
@@ -59,7 +59,7 @@ class ImageView(QGraphicsView):
         self.pt_2 = None
         self.selected_box = None
         self.hovered_box = None
-        self.mouse_line_pen = QPen(Qt.red)
+        self.mouse_line_pen = QPen(Qt.GlobalColor.red)
         self.mouse_hline = QLineF()
         self.mouse_vline = QLineF()
 
@@ -99,19 +99,19 @@ class ImageView(QGraphicsView):
             # Draw crosshairs
             self.scene().addLine(self.mouse_hline, self.mouse_line_pen)
             self.scene().addLine(self.mouse_vline, self.mouse_line_pen)
-            self.setCursor(Qt.BlankCursor)
+            self.setCursor(Qt.CursorShape.BlankCursor)
 
             drag_rect = self.calc_drag_rect()
             if drag_rect:  # Drag rectangle should be drawn
                 top_left = self.get_scene_rel_point(QPointF(drag_rect.x(), drag_rect.y()))
                 scaled_size = drag_rect.size() * self.pixmap_scalar
-                self.scene().addRect(QRectF(top_left, scaled_size), QColor(0, 255, 0))
+                self.scene().addRect(QRectF(QPointF(top_left), scaled_size), QColor(0, 255, 0))
         else:  # No image loaded
             text_item = self.scene().addText('No image loaded.', QFont('Courier New'))
             text_item.setDefaultTextColor(QColor(255, 255, 255))
             text_item.setPos(self.width() / 2 - text_item.boundingRect().width() / 2,
                              self.height() / 2 - text_item.boundingRect().height() / 2)
-            self.setCursor(Qt.ArrowCursor)
+            self.setCursor(Qt.CursorShape.ArrowCursor)
 
     def clear(self):
         """
@@ -212,7 +212,7 @@ class ImageView(QGraphicsView):
         """
         if not pixmap or pixmap.isNull():
             return
-        scaled_pixmap = pixmap.scaled(self.width(), self.height(), Qt.KeepAspectRatio)
+        scaled_pixmap = pixmap.scaled(self.width(), self.height(), Qt.AspectRatioMode.KeepAspectRatio)
         self.pixmap_scalar = scaled_pixmap.width() / pixmap.width()
         self.pixmap_pos = QPointF(
             self.width() / 2 - scaled_pixmap.width() / 2,
@@ -314,7 +314,7 @@ class ImageView(QGraphicsView):
         dialog.set_delete_callback(self.delete_box)
 
         dialog.setModal(True)
-        dialog.exec_()
+        dialog.exec()
 
         box_json_after = box.source.get_json()
         if box_json_after != box_json_before:
@@ -392,7 +392,7 @@ class ImageView(QGraphicsView):
         dialog = QDialog()
         dialog.setLayout(QVBoxLayout())
         dialog.setWindowTitle('Specify a concept')
-        dialog.setWindowFlag(Qt.WindowCloseButtonHint, False)
+        dialog.setWindowFlag(Qt.WindowType.WindowCloseButtonHint, False)
         search = ConceptSearchbar()
 
         submit_button = QPushButton('Submit')
@@ -413,7 +413,7 @@ class ImageView(QGraphicsView):
         dialog.layout().addWidget(submit_button)
 
         dialog.setModal(True)
-        dialog.exec_()
+        dialog.exec()
 
         return concept_selected
 
@@ -532,21 +532,22 @@ class ImageView(QGraphicsView):
             self.reset_mouse()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        pos_f = QPointF(event.pos())
         if self.pixmap_src:
-            self.pt_1 = self.get_im_rel_point(event.pos())
+            self.pt_1 = self.get_im_rel_point(pos_f)
         if self.hovered_box:
             corner_box = None
-            self.hov_pt_1 = self.get_im_rel_point(event.pos())
-            if self.hov_tl_rect.contains(event.pos()):
+            self.hov_pt_1 = self.get_im_rel_point(pos_f)
+            if self.hov_tl_rect.contains(pos_f):
                 self.resize_type = 1
                 corner_box = self.hov_tl_rect
-            elif self.hov_tr_rect.contains(event.pos()):
+            elif self.hov_tr_rect.contains(pos_f):
                 self.resize_type = 2
                 corner_box = self.hov_tr_rect
-            elif self.hov_bl_rect.contains(event.pos()):
+            elif self.hov_bl_rect.contains(pos_f):
                 self.resize_type = 3
                 corner_box = self.hov_bl_rect
-            elif self.hov_br_rect.contains(event.pos()):
+            elif self.hov_br_rect.contains(pos_f):
                 self.resize_type = 4
                 corner_box = self.hov_br_rect
             else:
@@ -595,8 +596,8 @@ class ImageView(QGraphicsView):
                         new_br_corner.setY(int(self.pixmap_src.height()))
                     self.hovered_box.setBottomRight(new_br_corner)
 
-        self.mouse_hline.setLine(0, event.y(), self.scene().width(), event.y())
-        self.mouse_vline.setLine(event.x(), 0, event.x(), self.scene().height())
+        self.mouse_hline.setLine(0, event.pos().y(), self.scene().width(), event.pos().y())
+        self.mouse_vline.setLine(event.pos().x(), 0, event.pos().x(), self.scene().height())
 
         if self.enabled_observations and not self.resize_type:
             for uuid, enabled in self.enabled_observations.items():
@@ -615,13 +616,13 @@ class ImageView(QGraphicsView):
             self.pt_2 = None
             for uuid, enabled in self.enabled_observations.items():
                 if enabled:
-                    self.observation_map[uuid].metadata['box_manager'].check_box_click(event.pos(), event.button() == Qt.RightButton)
+                    self.observation_map[uuid].metadata['box_manager'].check_box_click(event.pos(), event.button() == Qt.MouseButton.RightButton)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         self.redraw()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.key() == Qt.Key_Up:
+        if event.key() == Qt.Key.Key_Up:
             self.select_prev()
-        elif event.key() == Qt.Key_Down:
+        elif event.key() == Qt.Key.Key_Down:
             self.select_next()

@@ -1,4 +1,4 @@
-PyQt5>=5.9.2
+PyQt6==6.3.1
 requests>=2.22.0
 python-dotenv>=0.19.0
 qdarkstyle>=3.0.2

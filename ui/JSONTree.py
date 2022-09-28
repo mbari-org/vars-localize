@@ -15,7 +15,7 @@ JSON tree item
 @license: __license__
 '''
 
-from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem
+from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem
 
 
 class JSONTree(QTreeWidget):

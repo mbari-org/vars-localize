@@ -1,9 +1,9 @@
 # BoundingBox.py (vars-localize)
 import typing
 
-from PyQt5.QtCore import Qt, QRectF, QPoint, QSizeF, QRect, QPointF
-from PyQt5.QtGui import QColor, QPainter, QPen, QFont
-from PyQt5.QtWidgets import QGraphicsItem, QStyleOptionGraphicsItem, QWidget
+from PyQt6.QtCore import Qt, QRectF, QPoint, QSizeF, QRect, QPointF
+from PyQt6.QtGui import QColor, QPainter, QPen, QFont
+from PyQt6.QtWidgets import QGraphicsItem, QStyleOptionGraphicsItem, QWidget
 
 import util.m3
 import util.utils
@@ -142,13 +142,13 @@ class GraphicsBoundingBox(QGraphicsItem):
         painter.setPen(pen)
         painter.drawRect(0, 0, int(self.width), int(self.height))
 
-        painter.setFont(QFont('Helvetica', 12, QFont.Bold))
+        painter.setFont(QFont('Helvetica', 12, QFont.Weight.Bold))
         draw_text = self.label if self.label else 'No label'
         if self.source.part is not None and self.source.part != 'self':
             draw_text += ' ' + self.source.part
         painter.drawText(0, int(self.height),
                          int(self.width), 20,
-                         Qt.AlignCenter | Qt.TextDontClip,
+                         Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextDontClip,
                          draw_text)
 
 

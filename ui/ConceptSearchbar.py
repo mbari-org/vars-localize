@@ -15,8 +15,8 @@ QLineEdit custom widget for searching concepts.
 @status: __status__
 @license: __license__
 '''
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtWidgets import QLineEdit, QCompleter
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import QLineEdit, QCompleter
 
 
 class ConceptSearchbar(QLineEdit):
@@ -29,7 +29,7 @@ class ConceptSearchbar(QLineEdit):
         self.setPlaceholderText('Search for concept')
 
         self.concept_completer = QCompleter(util.m3.get_all_concepts())
-        self.concept_completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.concept_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.setCompleter(self.concept_completer)
 
     def set_callback(self, func):

@@ -4,10 +4,10 @@ from http.client import HTTPException
 import json
 from typing import List
 import webbrowser
-from PyQt5 import QtCore
-from PyQt5.QtGui import QFont, QBrush, QColor, QKeyEvent
-from PyQt5.QtWidgets import QProgressDialog, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QDialog, QMessageBox, QHeaderView, \
-    QAbstractScrollArea, QMenu, QAction, QApplication, QVBoxLayout, QLabel, QDialogButtonBox
+from PyQt6 import QtCore
+from PyQt6.QtGui import QFont, QBrush, QColor, QKeyEvent, QAction
+from PyQt6.QtWidgets import QProgressDialog, QTreeWidget, QTreeWidgetItem, QAbstractItemView, QDialog, QMessageBox, QHeaderView, \
+    QAbstractScrollArea, QMenu, QApplication, QVBoxLayout, QLabel, QDialogButtonBox
 from qdarkstyle.dark.palette import DarkPalette
 
 from util.m3 import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments, \
@@ -73,7 +73,7 @@ class EntryTree(QTreeWidget):
         self.setHeaderLabels(headers)
         self.header_map = dict([tup[::-1] for tup in enumerate(headers)])  # header -> column lookup
 
-        self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.menu)
 
     def add_item(self, data, parent=None):
@@ -150,12 +150,12 @@ class ImagedMomentTree(EntryTree):
         self.time_window = None
         self.editable_uuids = set()
 
-        self.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
 
         header = self.header()
         self.setContentsMargins(0, 0, 0, 0)
         self.setViewportMargins(0, 0, 0, 0)
-        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         header.setCascadingSectionResizes(True)
 
         self.currentItemChanged.connect(self.item_changed)
@@ -359,7 +359,7 @@ class ImagedMomentTree(EntryTree):
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if self.parent().parent().parent().admin_mode:
-            if event.key() == QtCore.Qt.Key_Delete:
+            if event.key() == QtCore.Qt.Key.Key_Delete:
                 observations_to_delete = [el for el in self.selectedItems() if el.metadata['type'] == 'observation']
                 if not observations_to_delete:  # Ensure at least one observation selected
                     return
@@ -369,12 +369,12 @@ class ImagedMomentTree(EntryTree):
                 # Show confirmation dialog
                 res = QMessageBox.warning(self, 'Confirm Observation Bulk Delete',
                                         'Are you sure you want to delete the following observation(s)?\n\t' + '\n\t'.join(observation_uuids),
-                                        buttons=QMessageBox.Yes | QMessageBox.Cancel)
-                if res == QMessageBox.Yes:  # Do deletion and reload imaged moment
+                                        buttons=QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
+                if res == QMessageBox.StandardButton.Yes:  # Do deletion and reload imaged moment
                     for observation_uuid in observation_uuids:
                         delete_observation(observation_uuid)
                     self.parent().parent().parent().display_panel.image_view.reload_moment()
-            elif event.key() == QtCore.Qt.Key.Key_R and event.modifiers() == QtCore.Qt.ControlModifier:
+            elif event.key() == QtCore.Qt.Key.Key_R and event.modifiers() == QtCore.Qt.KeyboardModifier.ControlModifier:
                 # Rename all selected observations
                 observations_to_rename = [el for el in self.selectedItems() if el.metadata['type'] == 'observation']
                 if not observations_to_rename:
@@ -389,8 +389,8 @@ class ImagedMomentTree(EntryTree):
                 dialog_layout.addWidget(QLabel('Enter new name for observation(s):'))
                 concept_searchbar = ConceptSearchbar(dialog)
                 dialog_layout.addWidget(concept_searchbar)
-                button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-                ok_button = button_box.button(QDialogButtonBox.Ok)
+                button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+                ok_button = button_box.button(QDialogButtonBox.StandardButton.Ok)
                 ok_button.setEnabled(False)
                 button_box.accepted.connect(dialog.accept)
                 button_box.rejected.connect(dialog.reject)
@@ -407,13 +407,13 @@ class ImagedMomentTree(EntryTree):
                 dialog.setLayout(dialog_layout)
                 result = dialog.exec()
                 
-                if result == QDialog.Accepted:
+                if result == QDialog.DialogCode.Accepted:
                     confirmed = QMessageBox.warning(
                         self, 'Confirm Observation Bulk Rename',
                         f'Are you sure you want to rename the following observation(s) to {concept_to_set}?\n\t' + '\n\t'.join(observation_uuids),
-                        buttons=QMessageBox.Yes | QMessageBox.Cancel
+                        buttons=QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
                     )
-                    if confirmed == QMessageBox.Yes:
+                    if confirmed == QMessageBox.StandardButton.Yes:
                         for observation_uuid in observation_uuids:
                             rename_observation(observation_uuid, concept_to_set, self.parent().parent().parent().observer)
                         self.parent().parent().parent().display_panel.image_view.reload_moment()

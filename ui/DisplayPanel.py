@@ -14,7 +14,7 @@ Container widget used do display images + localizations and process input.
 @status: __status__
 @license: __license__
 '''
-from PyQt5.QtWidgets import QWidget, QVBoxLayout
+from PyQt6.QtWidgets import QWidget, QVBoxLayout
 
 from ui.ImageView import ImageView
 from ui.EntryTree import EntryTreeItem

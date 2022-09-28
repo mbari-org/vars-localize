@@ -1,5 +1,5 @@
 # SearchPanel.py (vars-localize)
-from PyQt5.QtGui import QColor
+from PyQt6.QtGui import QColor
 
 from ui.EntryTree import ImagedMomentTree
 from ui.JSONTree import JSONTree
@@ -19,8 +19,8 @@ Dock widget used to search for concepts and select frame grabs.
 @status: __status__
 @license: __license__
 '''
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QDockWidget, QMessageBox, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QScrollArea, QTextEdit, QLabel, \
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QDockWidget, QMessageBox, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QScrollArea, QTextEdit, QLabel, \
     QSizePolicy, QDialog, QPushButton, QDialogButtonBox
 
 from ui.ConceptSearchbar import ConceptSearchbar
@@ -35,9 +35,9 @@ class SearchPanel(QDockWidget):
     def __init__(self, parent=None):
         super(SearchPanel, self).__init__(parent)
 
-        self.setFeatures(QDockWidget.DockWidgetMovable |
-                         QDockWidget.DockWidgetFloatable)
-        self.setAllowedAreas(Qt.LeftDockWidgetArea)
+        self.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable |
+                         QDockWidget.DockWidgetFeature.DockWidgetFloatable)
+        self.setAllowedAreas(Qt.DockWidgetArea.LeftDockWidgetArea)
 
         self.contents = QWidget()
         self.contents.setMinimumSize(400, 300)
@@ -76,10 +76,10 @@ class SearchPanel(QDockWidget):
         self.association_area = QScrollArea()
         self.association_area.setWidgetResizable(True)
         self.association_text = QLabel()
-        self.association_text.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        self.association_text.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Maximum)
         self.association_area.setWidget(self.association_text)
-        self.association_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.association_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.association_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.association_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 
         self.contents.layout().addWidget(self.top_bar)
         self.contents.layout().addWidget(self.entry_tree, stretch=1)
@@ -149,7 +149,7 @@ class SearchPanel(QDockWidget):
         dialog.setMinimumSize(600, 300)
         dialog.setLayout(QVBoxLayout())
         dialog.setWindowTitle('Observation Information')
-        dialog.setWindowFlag(Qt.WindowCloseButtonHint, False)
+        dialog.setWindowFlag(Qt.WindowType.WindowCloseButtonHint, False)
 
         json_tree = JSONTree(item.metadata)
         concept_widget = QWidget()
@@ -159,7 +159,7 @@ class SearchPanel(QDockWidget):
         delete_button.setDisabled(not editable and not admin_mode)
         delete_lock = False
 
-        button_box = QDialogButtonBox(QDialogButtonBox.Save)
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Save)
         button_box.setStyleSheet('background-color: darkgreen')
         button_box.accepted.connect(dialog.accept)
 
@@ -189,7 +189,7 @@ class SearchPanel(QDockWidget):
         concept_before = concept_field.text()
 
         dialog.setModal(True)
-        dialog.exec_()
+        dialog.exec()
 
         concept_after = concept_field.text()
         if not delete_lock and concept_after != concept_before:  # Rename the observation

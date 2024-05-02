@@ -79,7 +79,8 @@ def extract_bounding_boxes(associations: list, concept: str, observation_uuid: s
             continue
 
         box_json = json.loads(association['link_value'])
-        if im_ref_filter and box_json['image_reference_uuid'] == im_ref_filter:
+        image_reference_uuid = box_json.get('image_reference_uuid', None)
+        if im_ref_filter is not None and image_reference_uuid == im_ref_filter:
             yield SourceBoundingBox(  # Create source box
                 box_json,
                 concept,

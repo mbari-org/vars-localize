@@ -99,6 +99,7 @@ class AppWindow(QMainWindow):
         :return: None
         """
         login_dialog = LoginDialog(parent=self)
+        login_dialog._login_form._username_line_edit.setFocus()
         ok = login_dialog.exec()
         
         if ok:

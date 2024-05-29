@@ -234,19 +234,18 @@ class ImagedMomentTree(EntryTree):
                 video_reference_uuid, imaged_moment_uuid
             ), level=1)
 
-        for image_reference in meta['image_references']:  # Pick the image reference & URL to use
-            image_format = image_reference.get('format', None)
-            if image_format is None:  # No image format specified, skip
-                continue
-            
-            if image_format == 'image/png':  # Found a PNG! Use this as the picture to display
-                meta['image_reference_uuid'] = image_reference['uuid']
-                meta['url'] = image_reference['url']
-                break
-        else:  # No valid image reference found
+        # Pick the image reference to use
+        png_image_references = list(filter(lambda x: x.get('format', None) == 'image/png', meta['image_references']))
+        jpeg_image_references = list(filter(lambda x: x.get('format', None) == 'image/jpeg', meta['image_references']))
+        valid_image_references = png_image_references + jpeg_image_references
+        if not valid_image_references:  # No valid image reference found
             log('No valid image reference found for imaged moment {}'.format(imaged_moment_uuid), level=1)
             meta['image_reference_uuid'] = None
             meta['url'] = None
+        else:
+            image_reference = valid_image_references[0]
+            meta['image_reference_uuid'] = image_reference['uuid']
+            meta['url'] = image_reference['url']
 
         for observation in meta['observations']:
             obs_item = self.add_item(observation, parent=entry)

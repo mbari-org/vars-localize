@@ -241,8 +241,8 @@ class ImageView(QGraphicsView):
             if 'longitude' in ancillary_data:
                 text_dict['Longitude: {:<10.3f}'] = ancillary_data['longitude']
 
-        if 'recorded_date' in self.moment.metadata.keys():
-            text_dict['Recorded: {:<20}'] = self.moment.metadata['recorded_date'].replace('T', ' ').replace('Z', '')
+        if 'recorded_timestamp' in self.moment.metadata.keys():
+            text_dict['Recorded: {:<20}'] = self.moment.metadata['recorded_timestamp'].replace('T', ' ').replace('Z', '')
 
         if 'video_data' not in self.moment.metadata.keys():
             video_data = get_video_data(self.moment.metadata['video_reference_uuid'])
@@ -429,8 +429,8 @@ class ImageView(QGraphicsView):
             kwargs['timecode'] = self.moment.metadata['timecode']
         if 'elapsed_time_millis' in fields:
             kwargs['elapsed_time_millis'] = self.moment.metadata['elapsed_time_millis']
-        if 'recorded_date' in fields:
-            kwargs['recorded_timestamp'] = self.moment.metadata['recorded_date']
+        if 'recorded_timestamp' in fields:
+            kwargs['recorded_timestamp'] = self.moment.metadata['recorded_timestamp']
 
         observation = create_observation(  # Call observation creation request
             self.moment.metadata['video_reference_uuid'],

@@ -319,8 +319,8 @@ class ImagedMomentTree(EntryTree):
         
         # Parse the annotation timestamp into a timedelta object
         annotation_timedelta = None
-        if 'recorded_date' in im_item.metadata:
-            recorded_timestamp = im_item.metadata['recorded_date']
+        if 'recorded_timestamp' in im_item.metadata:
+            recorded_timestamp = im_item.metadata['recorded_timestamp']
             recorded_datetime = None
             try:
                 recorded_datetime = datetime.strptime(recorded_timestamp, '%Y-%m-%dT%H:%M:%S.%fZ')

@@ -57,7 +57,6 @@ class SourceBoundingBox(QRect):
         
         if self.observer is not None:
             d['observer'] = self.observer
-            d['strength'] = util.utils.get_observer_confidence(self.observer)
         
         return d
 

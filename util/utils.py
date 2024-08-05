@@ -88,20 +88,6 @@ def extract_bounding_boxes(associations: list, concept: str, observation_uuid: s
             )
 
 
-def get_observer_confidence(observer: str):
-    """
-    Get the confidence value given a particular observer.
-    :param observer: Observer to lookup
-    :return: Confidence value (any)
-    """
-    with open('config/strength_map.json', 'r') as f:
-        json_obj = json.load(f)
-        for conf_rank in json_obj.keys():
-            if conf_rank != 'default' and observer in json_obj[conf_rank]:
-                return conf_rank
-        return json_obj['default']
-
-
 def split_comma_list(comma_str: str):
     """
     Split a comma-separated list of values, stripping whitespace

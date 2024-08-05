@@ -520,7 +520,6 @@ class ImageView(QGraphicsView):
                     box_json,
                     concept,
                     observer,
-                    utils.get_observer_confidence(observer),
                     part=part
                 )
                 if new_src_box.width() * new_src_box.height() > 100:

@@ -1,5 +1,4 @@
 # SearchPanel.py (vars-localize)
-from PyQt6.QtGui import QColor
 
 from ui.EntryTree import ImagedMomentTree
 from ui.JSONTree import JSONTree
@@ -21,7 +20,7 @@ Dock widget used to search for concepts and select frame grabs.
 '''
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QDockWidget, QMessageBox, QVBoxLayout, QWidget, QHBoxLayout, QSpinBox, QScrollArea, QTextEdit, QLabel, \
-    QSizePolicy, QDialog, QPushButton, QDialogButtonBox
+    QSizePolicy, QDialog, QPushButton, QDialogButtonBox, QSplitter
 
 from ui.ConceptSearchbar import ConceptSearchbar
 
@@ -58,12 +57,12 @@ class SearchPanel(QDockWidget):
 
         self.top_bar.layout().addWidget(self.search_bar)
         self.top_bar.layout().addWidget(self.time_window)
-
-        self.entry_tree = ImagedMomentTree()
-        self.entry_tree.currentItemChanged.connect(self.parent().load_entry)
-        self.entry_tree.itemDoubleClicked.connect(self.show_popup)
-        self.entry_tree.time_window = 0
-        self.time_window.valueChanged.connect(self.entry_tree.set_time_window)
+        
+        self.bottom_splitter = QSplitter()
+        self.bottom_splitter.setOrientation(Qt.Orientation.Vertical)
+        
+        self.entry_widget = QWidget()
+        self.entry_widget.setLayout(QVBoxLayout())
 
         self.paginator = Paginator()
         self.paginator.set_limit(25)
@@ -80,11 +79,19 @@ class SearchPanel(QDockWidget):
         self.association_area.setWidget(self.association_text)
         self.association_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.association_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        
+        self.entry_tree = ImagedMomentTree(self.association_text, parent=self)
+        self.entry_tree.currentItemChanged.connect(self.parent().load_entry)
+        self.entry_tree.itemDoubleClicked.connect(self.show_popup)
+        self.entry_tree.time_window = 0
+        self.time_window.valueChanged.connect(self.entry_tree.set_time_window)
 
         self.contents.layout().addWidget(self.top_bar)
-        self.contents.layout().addWidget(self.entry_tree, stretch=1)
-        self.contents.layout().addWidget(self.paginator)
-        self.contents.layout().addWidget(self.association_area)
+        self.contents.layout().addWidget(self.bottom_splitter)
+        self.entry_widget.layout().addWidget(self.entry_tree, stretch=1)
+        self.entry_widget.layout().addWidget(self.paginator)
+        self.bottom_splitter.addWidget(self.entry_widget)
+        self.bottom_splitter.addWidget(self.association_area)
 
         self.observer = ''
 

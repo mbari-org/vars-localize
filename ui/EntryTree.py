@@ -2,7 +2,7 @@
 from datetime import datetime, timedelta
 from http.client import HTTPException
 import json
-from typing import List
+from typing import Iterable, List
 import webbrowser
 from PyQt6 import QtCore
 from PyQt6.QtGui import QFont, QBrush, QColor, QKeyEvent, QAction
@@ -65,13 +65,15 @@ class EntryTreeItem(QTreeWidgetItem):
 
 class EntryTree(QTreeWidget):
 
-    def __init__(self, headers, parent=None):
+    def __init__(self, headers: Iterable[str], association_text_widget: QLabel, parent=None):
         super(EntryTree, self).__init__(parent)
 
         self.setFont(QFont('Courier'))
 
         self.setHeaderLabels(headers)
         self.header_map = dict([tup[::-1] for tup in enumerate(headers)])  # header -> column lookup
+        
+        self.association_text_widget = association_text_widget
 
         self.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.menu)
@@ -136,7 +138,7 @@ def update_imaged_moment_entry(entry: EntryTreeItem):
 
 class ImagedMomentTree(EntryTree):
 
-    def __init__(self, parent=None):
+    def __init__(self, association_text_widget: QLabel, parent=None):
         super(ImagedMomentTree, self).__init__(
             (
                 'uuid',
@@ -144,7 +146,9 @@ class ImagedMomentTree(EntryTree):
                 'observer',
                 'status'
             ),
-            parent)
+            association_text_widget=association_text_widget,
+            parent=parent
+        )
 
         self.uuids = []
         self.time_window = None
@@ -269,16 +273,16 @@ class ImagedMomentTree(EntryTree):
         :return: None
         """
         if not current or not current.metadata:
-            self.parent().parent().association_text.setText('')
+            self.association_text_widget.setText('')
             return
         if current.metadata['type'] == 'imaged_moment':
             if not current.childCount():
                 self.load_imaged_moment_entry(current)
-            self.parent().parent().association_text.setText('')
+            self.association_text_widget.setText('')
         elif current.metadata['type'] == 'observation':
             associations = current.metadata['associations']
-            assoc_lines = ['{} | {} | {}'.format(assoc['link_name'], assoc['to_concept'], assoc['link_value']) for assoc in associations if assoc['link_name'] != 'bounding box']
-            self.parent().parent().association_text.setText('\n'.join(assoc_lines))
+            assoc_lines = ['{} | {} | {}'.format(assoc['link_name'], assoc['to_concept'], assoc['link_value']) for assoc in associations]
+            self.association_text_widget.setText('\n'.join(assoc_lines))
     
     def open_video_for_item(self, item: EntryTreeItem) -> bool:
         """

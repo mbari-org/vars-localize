@@ -1,12 +1,9 @@
 # utils.py (vars-localize)
 from ui.BoundingBox import SourceBoundingBox
 
-import configparser
 from functools import reduce
 import json
-import os
 import urllib.parse
-from dotenv import load_dotenv
 
 __author__ = "Kevin Barnard"
 __copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"

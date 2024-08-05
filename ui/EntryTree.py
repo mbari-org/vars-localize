@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QProgressDialog, QTreeWidget, QTreeWidgetItem, QAbst
     QAbstractScrollArea, QMenu, QApplication, QVBoxLayout, QLabel, QDialogButtonBox
 from qdarkstyle.dark.palette import DarkPalette
 
-from util.m3 import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, get_windowed_moments, \
+from util.m3 import get_imaged_moment_uuids, get_imaged_moment, get_other_videos, \
     delete_observation, get_video_by_video_reference_uuid, get_all_concepts, rename_observation
 from util.utils import extract_bounding_boxes, log
 from ui.ConceptSearchbar import ConceptSearchbar
@@ -151,7 +151,6 @@ class ImagedMomentTree(EntryTree):
         )
 
         self.uuids = []
-        self.time_window = None
         self.editable_uuids = set()
 
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -163,14 +162,6 @@ class ImagedMomentTree(EntryTree):
         header.setCascadingSectionResizes(True)
 
         self.currentItemChanged.connect(self.item_changed)
-
-    def set_time_window(self, value: int):
-        """
-        Update the time window value
-        :param value: Value to set
-        :return: None
-        """
-        self.time_window = value
 
     def load_uuids(self, uuids: List[str]):
         # Update the internal list of UUIDs
@@ -219,24 +210,7 @@ class ImagedMomentTree(EntryTree):
         meta = entry.metadata
         meta['type'] = 'imaged_moment'
 
-        video_reference_uuid = meta['video_reference_uuid']
         imaged_moment_uuid = meta['uuid']
-
-        try:
-            all_moments = get_windowed_moments(  # Fetch all moments in window
-                [meta['video_reference_uuid']], meta['uuid'],
-                self.time_window
-            )
-
-            for moment in all_moments:  # Add other observations to the imaged moment observations list
-                known_observation_uuids = [obs['uuid'] for obs in meta['observations']]
-                for obs in moment['observations']:
-                    if obs['uuid'] not in known_observation_uuids:
-                        meta['observations'].append(obs)
-        except:
-            log('Failed to fetch windowed moments for video reference {} around imaged moment {}'.format(
-                video_reference_uuid, imaged_moment_uuid
-            ), level=1)
 
         # Pick the image reference to use
         png_image_references = list(filter(lambda x: x.get('format', None) == 'image/png', meta['image_references']))

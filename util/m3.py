@@ -361,32 +361,6 @@ def get_other_videos(video_reference_uuid: str) -> list:
     return [ref['video_reference_uuid'] for ref in response_json]
 
 
-def get_windowed_moments(video_reference_uuids: list, imaged_moment_uuid: str, time_window: int):
-    """
-    Get a list of imaged moment data within specified time window in the given videos corresponding to a particular imaged moment.
-    :param video_reference_uuids: List of video reference UUIDs to fetch from
-    :param imaged_moment_uuid: Reference imaged moment UUID
-    :param time_window: Time window, in milliseconds
-    :return: List of imaged moment data
-    """
-    request_data = {
-        'video_reference_uuids': video_reference_uuids,
-        'imaged_moment_uuid': imaged_moment_uuid,
-        'window': time_window
-    }
-
-    response = ANNO_SESSION.post(
-        endpoints.Annosaurus.WINDOW_REQUEST,
-        data=json.dumps(request_data),
-        headers={
-            'Content-Type': 'application/json'
-        },
-        timeout=2  # TODO Remove once endpoint is fixed
-    )
-    response_json = response.json()
-    return response_json
-
-
 @requires_auth(ANNO_SESSION)
 def rename_observation(observation_uuid: str, new_concept: str, observer: str):
     """

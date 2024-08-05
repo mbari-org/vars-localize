@@ -457,7 +457,13 @@ def get_video_by_video_reference_uuid(video_reference_uuid: str):
         )
         response.raise_for_status()
         
-        return response.json()
+        response_parsed = response.json()
+
+        # Workaround for https://github.com/mbari-org/vampire-squid/issues/10
+        if isinstance(response_parsed, list):
+            return response_parsed[0]
+
+        return response_parsed
     except Exception as e:
         utils.log('Could not fetch video data for video reference {}'.format(video_reference_uuid), level=1)
         utils.log(e, level=1)

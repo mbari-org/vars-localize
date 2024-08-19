@@ -89,12 +89,19 @@ class ImageView(QGraphicsView):
                 for uuid, enabled in self.enabled_observations.items():
                     if not enabled:
                         continue
-                    for box in self.observation_map[uuid].metadata['boxes']:
-                        box_item = self.draw_bounding_box(box, self.observation_map[uuid].metadata['box_manager'])
+                    
+                    item = self.observation_map[uuid]
+                    box_manager = item.metadata['box_manager']
+                    boxes = item.metadata['boxes']
+                    video_boxes = item.metadata['video_boxes']
+                    for box in boxes:
+                        box_item = self.draw_bounding_box(box, box_manager)
                         if self.selected_box == box:
                             box_item.set_highlighted(True)
                         if self.hovered_box == box:
                             self.draw_drag_corners(box_item)
+                    for video_box in video_boxes:
+                        self.draw_bounding_box(video_box, box_manager, editable=False)
 
             # Draw crosshairs
             self.scene().addLine(self.mouse_hline, self.mouse_line_pen)
@@ -259,11 +266,12 @@ class ImageView(QGraphicsView):
         text_item.setDefaultTextColor(QColor(255, 255, 255))
         text_item.setPos(10, self.height() - text_item.boundingRect().height() - 10)
 
-    def draw_bounding_box(self, box_src: SourceBoundingBox, manager: BoundingBoxManager):
+    def draw_bounding_box(self, box_src: SourceBoundingBox, manager: BoundingBoxManager, editable: bool = True):
         """
         Draw a bounding box in the scene, add to box manager
         :param box_src: Source bounding box to add
         :param manager: Bounding box manager
+        :param editable: Box should be editable
         :return: Graphical bounding box item
         """
         box_pos = self.get_scene_rel_point(QPointF(box_src.x(), box_src.y()))
@@ -273,7 +281,9 @@ class ImageView(QGraphicsView):
             self.pixmap_scalar * box_src.width(),
             self.pixmap_scalar * box_src.height(),
             box_src.label,
-            box_src)
+            box_src,
+            editable=editable,
+        )
         self.scene().addItem(box_item)
         return box_item
 

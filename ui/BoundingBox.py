@@ -34,7 +34,7 @@ class SourceBoundingBox(QRect):
             box_json['width'],
             box_json['height']
         )
-        self.image_reference_uuid = box_json['image_reference_uuid']
+        self.image_reference_uuid = box_json.get('image_reference_uuid', None)
         self.observation_uuid = observation_uuid
         self.association_uuid = association_uuid
         self.part = part
@@ -64,10 +64,11 @@ class SourceBoundingBox(QRect):
 class GraphicsBoundingBox(QGraphicsItem):
     """ Graphical bounding box representation """
 
-    def __init__(self, source: SourceBoundingBox):
+    def __init__(self, source: SourceBoundingBox, editable: bool = True):
         super(GraphicsBoundingBox, self).__init__()
 
         self.source = source
+        self.editable = editable
 
         self.width = 0
         self.height = 0
@@ -96,7 +97,11 @@ class GraphicsBoundingBox(QGraphicsItem):
         :return: None
         """
         self.label = label
-        self.color.setHsv(*util.utils.n_split_hash(label, 1), 255, 255)
+        if self.editable:
+            self.color.setHsv(*util.utils.n_split_hash(label, 1), 255, 255)
+        else:
+            # If not editable, set color to gray with 50% opacity
+            self.color.setHsv(0, 0, 128, alpha=128)
 
     def set_highlighted(self, highlighted: bool):
         """
@@ -163,7 +168,7 @@ class BoundingBoxManager:
         self.box_click_callback = None
         self.box_right_click_callback = None
 
-    def make_box(self, x, y, w, h, label, src):
+    def make_box(self, x, y, w, h, label, src, editable: bool = True):
         """
         Create a box and add it to the manager
         :param x: x position
@@ -172,9 +177,10 @@ class BoundingBoxManager:
         :param h: Height
         :param label: Bounding box label
         :param src: Source bounding box
+        :param editable: Whether the box is editable
         :return: Graphical bounding box item
         """
-        box = GraphicsBoundingBox(src)
+        box = GraphicsBoundingBox(src, editable=editable)
         box.set_box(x, y, w, h)
         box.set_label(label)
         self.bounding_boxes.append(box)
@@ -204,7 +210,7 @@ class BoundingBoxManager:
         """
         selected_box = None
         for box in self.bounding_boxes:
-            if box.contains(pt):
+            if box.contains(pt) and box.editable:
                 if not selected_box or box.area() < selected_box.area():
                     selected_box = box
         if self.box_click_callback:
@@ -222,7 +228,7 @@ class BoundingBoxManager:
         """
         hovered_box = None
         for box in self.bounding_boxes:
-            if box.contains(pt):
+            if box.contains(pt) and box.editable:
                 if not hovered_box or box.area() < hovered_box.area():
                     hovered_box = box
         return hovered_box

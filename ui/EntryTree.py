@@ -228,12 +228,19 @@ class ImagedMomentTree(EntryTree):
         for observation in meta['observations']:
             obs_item = self.add_item(observation, parent=entry)
             obs_item.metadata['type'] = 'observation'
-            obs_item.metadata['boxes'] = list(extract_bounding_boxes(
+            observation_boxes = list(extract_bounding_boxes(
                 observation['associations'],
                 observation['concept'],
                 observation['uuid'],
-                im_ref_filter=meta['image_reference_uuid']
             ))
+            
+            # Distinguish boxes that correspond to the image reference from those that were drawn on the video (may or may not be the same frame)
+            image_reference_boxes = [box for box in observation_boxes if box.image_reference_uuid == meta['image_reference_uuid']]
+            video_boxes = [box for box in observation_boxes if box.image_reference_uuid is None]
+            
+            obs_item.metadata['boxes'] = image_reference_boxes
+            obs_item.metadata['video_boxes'] = video_boxes
+            
             if observation['uuid'] in self.editable_uuids:
                 obs_item.set_background('uuid', QColor('#b9ff96'))
 

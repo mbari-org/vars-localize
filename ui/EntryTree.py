@@ -342,7 +342,7 @@ class ImagedMomentTree(EntryTree):
         webbrowser.open(video_url_fragment)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
-        if self.parent().parent().parent().admin_mode:
+        if self.parent().parent().parent().parent().parent().admin_mode:
             if event.key() == QtCore.Qt.Key.Key_Delete:
                 observations_to_delete = [el for el in self.selectedItems() if el.metadata['type'] == 'observation']
                 if not observations_to_delete:  # Ensure at least one observation selected
@@ -401,3 +401,5 @@ class ImagedMomentTree(EntryTree):
                         for observation_uuid in observation_uuids:
                             rename_observation(observation_uuid, concept_to_set, self.parent().parent().parent().observer)
                         self.parent().parent().parent().display_panel.image_view.reload_moment()
+        else:
+            super().keyPressEvent(event)

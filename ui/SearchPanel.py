@@ -172,6 +172,10 @@ class SearchPanel(QDockWidget):
             delete_lock = True
             self.parent().display_panel.image_view.set_entry(item.parent())
             self.parent().display_panel.image_view.reload_moment()
+        
+        def set_dialog_saveable(saveable: bool):
+            button_box.button(QDialogButtonBox.StandardButton.Save).setDisabled(not saveable)
+        set_dialog_saveable(False)
 
         delete_button.pressed.connect(do_delete_observation)
 
@@ -183,6 +187,8 @@ class SearchPanel(QDockWidget):
         concept_field = ConceptSearchbar()
         concept_field.setText(item.metadata['concept'])
         concept_field.setDisabled(not editable and not admin_mode)
+        concept_field.textChanged.connect(lambda: set_dialog_saveable(False))
+        concept_field.set_callback(lambda: set_dialog_saveable(True))
 
         concept_widget.layout().addWidget(QLabel('Concept:'))
         concept_widget.layout().addWidget(concept_field)
@@ -190,10 +196,10 @@ class SearchPanel(QDockWidget):
         concept_before = concept_field.text()
 
         dialog.setModal(True)
-        dialog.exec()
+        accepted = dialog.exec()
 
         concept_after = concept_field.text()
-        if not delete_lock and concept_after != concept_before:  # Rename the observation
+        if accepted and not delete_lock and concept_after != concept_before:  # Rename the observation
             rename_observation(observation_uuid, concept_after, self.observer)
             moment = item.parent()
             self.entry_tree.load_imaged_moment_entry(moment)

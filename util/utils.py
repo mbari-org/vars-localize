@@ -43,6 +43,9 @@ def n_split_hash(string: str, n: int, maxval: int = 255):
     :param maxval: Bound
     :return: Tuple of int values
     """
+    if not string:
+        return tuple([127] * n)
+
     part_len = len(string) // n
     parts = [string[i * part_len:(i + 1) * part_len] for i in range(n - 1)]
     parts.append(string[(n - 1) * part_len:])

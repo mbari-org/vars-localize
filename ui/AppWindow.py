@@ -22,10 +22,8 @@ Application Window.
 '''
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QCloseEvent, QIcon, QAction
-from PyQt6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QDialog, QVBoxLayout, QFormLayout, QLineEdit, \
-    QPushButton, QCompleter, QMessageBox, QInputDialog
+from PyQt6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QMessageBox, QInputDialog
 
-from ui.ConceptEntry import ConceptEntry
 from ui.DisplayPanel import DisplayPanel
 from ui.SearchPanel import SearchPanel
 
@@ -35,14 +33,15 @@ from util.utils import log, split_comma_list
 
 class AppWindow(QMainWindow):
 
-    def __init__(self, parent=None):
+    def __init__(self, m3_url: str, parent=None):
         super(AppWindow, self).__init__(parent)
+        self._m3_url = m3_url.rstrip('/')
 
         self.setWindowTitle('VARS Localize')
         self.setWindowIcon(QIcon('images/Icon.ico'))
 
-        log('Checking connection to M3...')
-        if not check_connection():
+        log(f'Checking connection to M3 at {self._m3_url}...')
+        if not check_connection(self._m3_url):
             log('You are not connected to M3. Check your internet connection and/or VPN.', level=2)
             QMessageBox.critical(self,
                                  'No connection to M3',
@@ -129,7 +128,7 @@ class AppWindow(QMainWindow):
         from util.m3 import configure_anno_session
         
         try:
-            configure_endpoints(username, password)
+            configure_endpoints(self._m3_url, username, password)
         except Exception as e:
             log('Login failed.', level=2)
             log(e, level=2)

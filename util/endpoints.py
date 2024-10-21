@@ -7,15 +7,12 @@ You must be in the MBARI network before configuring this module with configure()
 import requests
 from base64 import b64encode
 
-M3_URL = 'http://m3.shore.mbari.org'  # The URL of the M3 microservices server
-CONFIG_URL = (
-    M3_URL + '/config'
-)  # The static URL of the M3 microservices config endpoint (Raziel)
+DEFAULT_M3_URL = 'http://m3.shore.mbari.org'  # The URL of the M3 microservices server
 
 ENDPOINTS = None
 
 
-def configure(username: str, password: str):
+def configure(m3_url: str, username: str, password: str):
     """
     Authenticate with Raziel and configure the M3 endpoints.
     """
@@ -24,9 +21,11 @@ def configure(username: str, password: str):
         '{}:{}'.format(username, password).encode('utf-8')
     ).decode('utf-8')
 
+    config_url = m3_url.rstrip('/') + '/config'
+
     # Attempt to authenticate with Raziel
     res = requests.post(
-        CONFIG_URL + '/auth', headers={'Authorization': user_pass_base64}
+        config_url + '/auth', headers={'Authorization': user_pass_base64}
     )
     if res.status_code != 200:
         raise Exception(
@@ -43,12 +42,12 @@ def configure(username: str, password: str):
     ENDPOINTS = {
         endpoint['name']: endpoint
         for endpoint in requests.get(
-            CONFIG_URL + '/endpoints', headers={'Authorization': 'Bearer ' + token}
+            config_url + '/endpoints', headers={'Authorization': 'Bearer ' + token}
         ).json()
     }
 
 
-class ConfigEndpoint(type):  # deep, dark magic
+class ConfigEndpoint(type):
     """
     Metaclass to namespace endpoint constants with a given Raziel configuration name.
     """

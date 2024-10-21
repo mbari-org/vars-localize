@@ -58,17 +58,18 @@ def requires_auth(session: requests.Session):
     return wrapper
 
 
-def check_connection() -> bool:
+def check_connection(m3_url: str) -> bool:
     """
     Check the connection by sending a GET request to the prod_site endpoint
     :return: Connection OK
     """
     try:
         r = DEFAULT_SESSION.get(
-            endpoints.M3_URL, timeout=3
+            m3_url, timeout=3
         )
         return r.status_code == 200
-    except:
+    except requests.HTTPError as e:
+        utils.log(f'Connection check failed: {e}', level=2)
         return False
 
 

@@ -7,7 +7,7 @@ You must be in the MBARI network before configuring this module with configure()
 import requests
 from base64 import b64encode
 
-DEFAULT_M3_URL = 'http://m3.shore.mbari.org'  # The URL of the M3 microservices server
+DEFAULT_M3_URL = 'https://m3.shore.mbari.org'  # The URL of the M3 microservices server
 
 ENDPOINTS = None
 

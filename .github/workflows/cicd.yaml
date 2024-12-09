@@ -1,0 +1,63 @@
+# GitHub action for CI/CD: linting/testing, releasing, and publishing
+
+name: CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    concurrency: release
+    permissions:
+      id-token: write
+      contents: write
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Python Semantic Release
+        id: semantic_release
+        uses: python-semantic-release/python-semantic-release@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+    
+    outputs:
+      released: ${{ steps.semantic_release.outputs.released }}
+      version: ${{ steps.semantic_release.outputs.version }}
+  
+  publish:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+            ref: v${{ needs.release.outputs.version }}
+      
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v3
+        with:
+          python-version: 3.12
+      
+      - name: Install Rye
+        run: |
+          curl -sSf https://rye.astral.sh/get | RYE_VERSION="0.38.0" RYE_INSTALL_OPTION="--yes" bash
+          echo "PATH=${HOME}/.rye/shims:${PATH}" >> $GITHUB_ENV
+      
+      - name: Build
+        run: |
+          rye build
+      
+      - name: Publish to PyPI
+        run: |
+          rye publish --token ${{ secrets.PYPI_TOKEN }} --yes

@@ -5,7 +5,7 @@ Main application window.
 from datetime import datetime
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QCloseEvent, QIcon, QAction
+from PyQt6.QtGui import QCloseEvent, QAction
 from PyQt6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QMessageBox, QInputDialog
 
 from vars_localize.ui.EntryTree import EntryTreeItem

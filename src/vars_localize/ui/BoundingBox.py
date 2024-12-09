@@ -1,40 +1,32 @@
-# BoundingBox.py (vars-localize)
+"""
+Bounding box data structure and manager helper class.
+"""
+
 import typing
 
 from PyQt6.QtCore import Qt, QRectF, QPoint, QSizeF, QRect, QPointF
 from PyQt6.QtGui import QColor, QPainter, QPen, QFont
 from PyQt6.QtWidgets import QGraphicsItem, QStyleOptionGraphicsItem, QWidget
 
-import util.m3
-import util.utils
-
-__author__ = "Kevin Barnard"
-__copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
-__credits__ = ["MBARI"]
-__license__ = "GPL"
-__maintainer__ = "Kevin Barnard"
-__email__ = "kbarnard@mbari.org"
-__doc__ = '''
-
-Bounding box data structure and manager helper class.
-
-@author: __author__
-@status: __status__
-@license: __license__
-'''
+from vars_localize.util import m3, utils
 
 
 class SourceBoundingBox(QRect):
-    """ Bounding box VARS source data structure """
+    """Bounding box VARS source data structure"""
 
-    def __init__(self, box_json, label, observer=None, observation_uuid=None, association_uuid=None, part=None):
+    def __init__(
+        self,
+        box_json,
+        label,
+        observer=None,
+        observation_uuid=None,
+        association_uuid=None,
+        part=None,
+    ):
         super(SourceBoundingBox, self).__init__(
-            box_json['x'],
-            box_json['y'],
-            box_json['width'],
-            box_json['height']
+            box_json["x"], box_json["y"], box_json["width"], box_json["height"]
         )
-        self.image_reference_uuid = box_json.get('image_reference_uuid', None)
+        self.image_reference_uuid = box_json.get("image_reference_uuid", None)
         self.observation_uuid = observation_uuid
         self.association_uuid = association_uuid
         self.part = part
@@ -42,27 +34,27 @@ class SourceBoundingBox(QRect):
         self.observer = observer
 
     def set_label(self, label):
-        if label in util.m3.get_all_concepts():
+        if label in m3.get_all_concepts():
             self.label = label
 
     def get_json(self):
         d = {
-            'x': self.x(),
-            'y': self.y(),
-            'width': self.width(),
-            'height': self.height(),
-            'generator': 'vars-localize',
-            'image_reference_uuid': self.image_reference_uuid
+            "x": self.x(),
+            "y": self.y(),
+            "width": self.width(),
+            "height": self.height(),
+            "generator": "vars-localize",
+            "image_reference_uuid": self.image_reference_uuid,
         }
-        
+
         if self.observer is not None:
-            d['observer'] = self.observer
-        
+            d["observer"] = self.observer
+
         return d
 
 
 class GraphicsBoundingBox(QGraphicsItem):
-    """ Graphical bounding box representation """
+    """Graphical bounding box representation"""
 
     def __init__(self, source: SourceBoundingBox, editable: bool = True):
         super(GraphicsBoundingBox, self).__init__()
@@ -98,7 +90,7 @@ class GraphicsBoundingBox(QGraphicsItem):
         """
         self.label = label
         if self.editable:
-            self.color.setHsv(*util.utils.n_split_hash(label, 1), 255, 255)
+            self.color.setHsv(*utils.n_split_hash(label, 1), 255, 255)
         else:
             # If not editable, set color to gray with 50% opacity
             self.color.setHsv(0, 0, 128, alpha=128)
@@ -131,10 +123,17 @@ class GraphicsBoundingBox(QGraphicsItem):
         :param pt: Point to check
         :return: True if point within box, else False
         """
-        return self.x() <= pt.x() <= self.x() + self.width and self.y() <= pt.y() <= self.y() + self.height
+        return (
+            self.x() <= pt.x() <= self.x() + self.width
+            and self.y() <= pt.y() <= self.y() + self.height
+        )
 
-    def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem,
-              widget: typing.Optional[QWidget] = ...) -> None:
+    def paint(
+        self,
+        painter: QPainter,
+        option: QStyleOptionGraphicsItem,
+        widget: typing.Optional[QWidget] = ...,
+    ) -> None:
         """
         Paint the item within the scene
         :param painter: Painter object
@@ -146,18 +145,22 @@ class GraphicsBoundingBox(QGraphicsItem):
         painter.setPen(pen)
         painter.drawRect(0, 0, int(self.width), int(self.height))
 
-        painter.setFont(QFont('Helvetica', 12, QFont.Weight.Bold))
-        draw_text = self.label if self.label else 'No label'
-        if self.source.part is not None and self.source.part != 'self':
-            draw_text += ' ' + self.source.part
-        painter.drawText(0, int(self.height),
-                         int(self.width), 20,
-                         Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextDontClip,
-                         draw_text)
+        painter.setFont(QFont("Helvetica", 12, QFont.Weight.Bold))
+        draw_text = self.label if self.label else "No label"
+        if self.source.part is not None and self.source.part != "self":
+            draw_text += " " + self.source.part
+        painter.drawText(
+            0,
+            int(self.height),
+            int(self.width),
+            20,
+            Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextDontClip,
+            draw_text,
+        )
 
 
 class BoundingBoxManager:
-    """ Manages a list of graphical bounding box objects """
+    """Manages a list of graphical bounding box objects"""
 
     def __init__(self, bounding_boxes: list = None):
         if bounding_boxes:
@@ -193,7 +196,7 @@ class BoundingBoxManager:
         :return: None
         """
         self.box_click_callback = func
-    
+
     def set_box_right_click_callback(self, func):
         """
         Set the callback function for when the box is clicked

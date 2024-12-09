@@ -1,34 +1,22 @@
-# ConceptSearchbar.py (vars-localize)
-import util.m3
+"""
+Custom QLineEdit widget for searching concepts.
+"""
 
-__author__ = "Kevin Barnard"
-__copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
-__credits__ = ["MBARI"]
-__license__ = "GPL"
-__maintainer__ = "Kevin Barnard"
-__email__ = "kbarnard@mbari.org"
-__doc__ = '''
-
-QLineEdit custom widget for searching concepts.
-
-@author: __author__
-@status: __status__
-@license: __license__
-'''
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QLineEdit, QCompleter
 
+from vars_localize.util import m3
+
 
 class ConceptSearchbar(QLineEdit):
-
     conceptSelected = pyqtSignal()
 
     def __init__(self, parent=None):
         super(ConceptSearchbar, self).__init__(parent)
 
-        self.setPlaceholderText('Search for concept')
+        self.setPlaceholderText("Search for concept")
 
-        self.concept_completer = QCompleter(util.m3.get_all_concepts())
+        self.concept_completer = QCompleter(m3.get_all_concepts())
         self.concept_completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.setCompleter(self.concept_completer)
 

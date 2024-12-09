@@ -3,44 +3,21 @@ Tool for creating localizations within the VARS database.
 
 Author: Kevin Barnard ([kbarnard@mbari.org](mailto:kbarnard@mbari.org))
 
-This project is made with [PyQt6](https://pypi.org/project/PyQt6/).
+## :hammer: Installation
 
-## Setup
+> [!NOTE]
+> VARS Localize requires Python 3.8 or later.
 
-Installation of requirements is managed either by Anaconda or pip.
-
-### Using Anaconda (**recommended**)
-
-#### 1. Create an environment
-
-From the root directory, run:
+To install VARS Localize, run:
 ```bash
-conda env create -f environment.yml
+pip install vars-localize
 ```
 
-This will create an Anaconda environment named `vars-localize` with all required dependencies.
-
-#### 2. Activate the environment
-
-To activate the environment, run:
-
-```bash
-conda activate vars-localize
-```
-
-### Using pip (Python >= 3.7)
-
-To install the required Python packages in your active Python environment, run:
-
-```bash
-pip install -r requirements.txt
-```
-
-## Usage
+## :rocket: Usage
 
 To start the application, run:
 ```bash
-python vars-localize.py
+vars-localize [-u URL]
 ```
 
 Once the application launches, log in with your VARS username and password.
@@ -50,3 +27,11 @@ Select an observation from the children in the subtree of the imaged moment, and
 
 You can double-click on any localization to edit its properties in a dialog.
 Additionally, a localization can be resized by dragging the square corners of its bounding box.
+
+## Credits
+
+VARS Localize is made with [PyQt6](https://pypi.org/project/PyQt6/).
+
+---
+
+Copyright &copy; 2019 [Monterey Bay Aquarium Research Institute](https://www.mbari.org/)

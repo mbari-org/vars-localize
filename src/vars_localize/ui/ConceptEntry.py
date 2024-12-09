@@ -1,30 +1,17 @@
-# ConceptEntry.py (vars-localize)
+"""
+Custom QListWidgetItem for displaying concept information.
+"""
 
-__author__ = "Kevin Barnard"
-__copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
-__credits__ = ["MBARI"]
-__license__ = "GPL"
-__maintainer__ = "Kevin Barnard"
-__email__ = "kbarnard@mbari.org"
-__doc__ = '''
-
-Custom QListWidgetItem for displaying concept information
-
-@author: __author__
-@status: __status__
-@license: __license__
-'''
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QListWidgetItem
 
 
 class ConceptEntry(QListWidgetItem):
-
     def __init__(self, data=None, parent=None):
         super(ConceptEntry, self).__init__(parent)
 
-        self.setFont(QFont('Courier New'))
+        self.setFont(QFont("Courier New"))
         self.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
 
         self.ann_data = data
@@ -42,5 +29,5 @@ class ConceptEntry(QListWidgetItem):
         Set message based on annotation data
         :return: None
         """
-        str_rep = '{0}: {1}'.format(self.ann_data['concept'], self.ann_data['timecode'])
+        str_rep = "{0}: {1}".format(self.ann_data["concept"], self.ann_data["timecode"])
         self.setText(str_rep)

@@ -1,26 +1,15 @@
-# utils.py (vars-localize)
-from ui.BoundingBox import SourceBoundingBox
+"""
+Utility functions for the application.
+"""
+
+from vars_localize.ui.BoundingBox import SourceBoundingBox
 
 from functools import reduce
 import json
 import urllib.parse
 
-__author__ = "Kevin Barnard"
-__copyright__ = "Copyright 2019, Monterey Bay Aquarium Research Institute"
-__credits__ = ["MBARI"]
-__license__ = "GPL"
-__maintainer__ = "Kevin Barnard"
-__email__ = "kbarnard@mbari.org"
-__doc__ = '''
 
-Utility functions for the application.
-
-@author: __author__
-@status: __status__
-@license: __license__
-'''
-
-LOG_LEVELS = {0: 'INFO', 1: 'WARNING', 2: 'ERROR'}
+LOG_LEVELS = {0: "INFO", 1: "WARNING", 2: "ERROR"}
 
 
 def log(message, level=0):
@@ -31,8 +20,8 @@ def log(message, level=0):
     :return: None
     """
     if level not in LOG_LEVELS:
-        raise ValueError('Bad log level.')
-    print('[{}] {}'.format(LOG_LEVELS[level], message))
+        raise ValueError("Bad log level.")
+    print("[{}] {}".format(LOG_LEVELS[level], message))
 
 
 def n_split_hash(string: str, n: int, maxval: int = 255):
@@ -47,13 +36,19 @@ def n_split_hash(string: str, n: int, maxval: int = 255):
         return tuple([127] * n)
 
     part_len = len(string) // n
-    parts = [string[i * part_len:(i + 1) * part_len] for i in range(n - 1)]
-    parts.append(string[(n - 1) * part_len:])
+    parts = [string[i * part_len : (i + 1) * part_len] for i in range(n - 1)]
+    parts.append(string[(n - 1) * part_len :])
 
-    return tuple([
-        reduce(lambda a, b: a * b % maxval, [ord(letter) for letter in sorted(part.replace(' ', ''))]) % maxval
-        for part in parts
-    ])
+    return tuple(
+        [
+            reduce(
+                lambda a, b: a * b % maxval,
+                [ord(letter) for letter in sorted(part.replace(" ", ""))],
+            )
+            % maxval
+            for part in parts
+        ]
+    )
 
 
 def encode_form(json_obj):
@@ -62,7 +57,7 @@ def encode_form(json_obj):
     :param json_obj: JSON object
     :return: URL encoded form string
     """
-    return bytearray(urllib.parse.urlencode(json_obj).replace('%27', '%22'), 'utf-8')
+    return bytearray(urllib.parse.urlencode(json_obj).replace("%27", "%22"), "utf-8")
 
 
 def extract_bounding_boxes(associations: list, concept: str, observation_uuid: str):
@@ -74,17 +69,17 @@ def extract_bounding_boxes(associations: list, concept: str, observation_uuid: s
     :return: Generator object for bounding boxes
     """
     for association in associations:  # Generate source bounding boxes
-        if association['link_name'] != 'bounding box':
+        if association["link_name"] != "bounding box":
             continue
 
-        box_json = json.loads(association['link_value'])
+        box_json = json.loads(association["link_value"])
         yield SourceBoundingBox(  # Create source box
             box_json,
             concept,
-            observer=box_json.get('observer', None),
+            observer=box_json.get("observer", None),
             observation_uuid=observation_uuid,
-            association_uuid=association['uuid'],
-            part=association['to_concept']
+            association_uuid=association["uuid"],
+            part=association["to_concept"],
         )
 
 
@@ -92,4 +87,4 @@ def split_comma_list(comma_str: str):
     """
     Split a comma-separated list of values, stripping whitespace
     """
-    return [item.strip() for item in comma_str.split(',')]
+    return [item.strip() for item in comma_str.split(",")]

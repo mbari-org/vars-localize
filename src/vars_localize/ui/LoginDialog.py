@@ -1,5 +1,7 @@
 from PyQt6 import QtWidgets
 
+from vars_localize.util.endpoints import DEFAULT_M3_URL
+
 
 class LoginDialog(QtWidgets.QDialog):
     """
@@ -11,8 +13,14 @@ class LoginDialog(QtWidgets.QDialog):
         Login form widget.
         """
 
-        def __init__(self, parent=None, completer=None):
+        def __init__(self, parent=None, completer=None, default_m3_url: str = ""):
             super().__init__(parent)
+
+            self._m3_url_line_edit = QtWidgets.QLineEdit()
+            self._m3_url_line_edit.setPlaceholderText(DEFAULT_M3_URL)
+            self._m3_url_line_edit.setText(
+                (default_m3_url or "").strip() or DEFAULT_M3_URL
+            )
 
             self._username_line_edit = QtWidgets.QLineEdit()
             if completer is not None:
@@ -28,19 +36,28 @@ class LoginDialog(QtWidgets.QDialog):
 
             layout.addRow("Username:", self._username_line_edit)
             layout.addRow("Password:", self._password_line_edit)
+            layout.addRow("Config server:", self._m3_url_line_edit)
 
             self.setLayout(layout)
 
         @property
         def credentials(self):
-            return self._username_line_edit.text(), self._password_line_edit.text()
+            return (
+                self._m3_url_line_edit.text().strip(),
+                self._username_line_edit.text(),
+                self._password_line_edit.text(),
+            )
 
-    def __init__(self, parent=None, completer=None):
+    def __init__(self, parent=None, completer=None, default_m3_url: str = ""):
         super().__init__(parent)
 
         self.setWindowTitle("Login")
 
-        self._login_form = LoginDialog.LoginForm(self, completer)
+        self._login_form = LoginDialog.LoginForm(
+            self,
+            completer,
+            default_m3_url=default_m3_url,
+        )
 
         self._dialog_buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.StandardButton.Ok
@@ -48,11 +65,15 @@ class LoginDialog(QtWidgets.QDialog):
         )
         self._dialog_buttons.accepted.connect(self.accept)
         self._dialog_buttons.rejected.connect(self.reject)
-        self._dialog_buttons.button(
+        ok_button = self._dialog_buttons.button(
             QtWidgets.QDialogButtonBox.StandardButton.Ok
-        ).setText("Login")
+        )
+        if ok_button is not None:
+            ok_button.setText("Login")
 
         self._arrange()
+
+        self.setMinimumWidth(400)
 
     def _arrange(self):
         layout = QtWidgets.QVBoxLayout()

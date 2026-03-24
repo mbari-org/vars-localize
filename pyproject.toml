@@ -1,6 +1,6 @@
 [project]
 name = "vars-localize"
-version = "0.1.0"
+version = "0.2.0"
 description = "Tool for creating localization with VARS."
 authors = [
     { name = "Kevin Barnard", email = "kbarnard@mbari.org" }
@@ -11,21 +11,28 @@ dependencies = [
     "qdarkstyle>=3.2.3",
 ]
 readme = "README.md"
-requires-python = ">= 3.8"
+requires-python = ">= 3.10"
+keywords = ["VARS", "localization", "annotation"]
 
 [project.scripts]
 vars-localize = "vars_localize.__main__:main"
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.rye]
-managed = true
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "python-semantic-release>=9.15.1",
     "pre-commit>=4.0.1",
 ]
+
+[project.optional-dependencies]
+sam = [
+    "ultralytics>=8.4.26",
+    "CLIP @ git+https://github.com/ultralytics/CLIP.git",
+    "timm"
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.hatch.metadata]
 allow-direct-references = true
@@ -43,6 +50,9 @@ tag_format = "v{version}"
 version_toml = [
     "pyproject.toml:project.version",
 ]
+version_variables = [
+    "src/vars_localize/__init__.py:__version__",
+]
 
 [tool.semantic_release.branches.main]
 match = "(main|master)"
@@ -51,10 +61,8 @@ prerelease = false
 
 [tool.semantic_release.changelog]
 template_dir = "templates"
-exclude_commit_patterns = []
-
-[tool.semantic_release.changelog.default_templates]
 changelog_file = "CHANGELOG.md"
+exclude_commit_patterns = []
 
 [tool.semantic_release.changelog.environment]
 block_start_string = "{%"

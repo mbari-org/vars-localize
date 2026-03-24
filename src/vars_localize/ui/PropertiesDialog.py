@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QPushButton
 
 from vars_localize.ui.BoundingBox import SourceBoundingBox
 from vars_localize.ui.PropertiesForm import PropertiesForm
+from vars_localize.util.utils import center_window
 
 
 class PropertiesDialog(QDialog):
@@ -21,17 +22,22 @@ class PropertiesDialog(QDialog):
         self.layout().addWidget(self.form)
 
         self.delete_button = QPushButton("Delete")
-        self.delete_button.setStyleSheet("background-color: darkred")
+        self.delete_button.setObjectName("dangerButton")
         self.delete_button.setDefault(False)
         self.layout().addWidget(self.delete_button)
 
-    def setup_form(self, pixmap_src: QPixmap, callback):
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        center_window(self, self.parentWidget())
+
+    def setup_form(self, pixmap_src: QPixmap, callback, part_options=None):
         self.form.set_bounds(
             pixmap_src.width(),
             pixmap_src.height(),
             pixmap_src.width() - self.box.x() + 1,
             pixmap_src.height() - self.box.y() + 1,
         )
+        self.form.set_part_options(part_options)
         self.form.update_box_fields()
         self.form.link_callback(callback)
 

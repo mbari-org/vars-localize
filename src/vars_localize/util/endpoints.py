@@ -12,7 +12,7 @@ DEFAULT_M3_URL = "https://m3.shore.mbari.org"  # The URL of the M3 microservices
 ENDPOINTS = None
 
 
-def configure(m3_url: str, username: str, password: str):
+def configure(config_url: str, username: str, password: str):
     """
     Authenticate with Raziel and configure the M3 endpoints.
     """
@@ -21,7 +21,7 @@ def configure(m3_url: str, username: str, password: str):
         "{}:{}".format(username, password).encode("utf-8")
     ).decode("utf-8")
 
-    config_url = m3_url.rstrip("/") + "/config"
+    config_url = config_url.rstrip("/")
 
     # Attempt to authenticate with Raziel
     res = requests.post(

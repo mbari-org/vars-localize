@@ -1,13 +1,11 @@
-"""
-Pagination controller widget.
-"""
+"""Pagination controller widget."""
+
+from math import ceil
+from typing import Optional
 
 from PyQt6 import QtGui
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLabel, QInputDialog
-
-from vars_localize.assets import get_asset_path
+from PyQt6.QtWidgets import QHBoxLayout, QInputDialog, QLabel, QPushButton, QWidget
 
 
 class Paginator(QWidget):
@@ -18,78 +16,170 @@ class Paginator(QWidget):
     def __init__(self, parent=None):
         super(Paginator, self).__init__(parent)
 
-        self.setLayout(QHBoxLayout())
+        self.setObjectName("paginatorBar")
+
+        self._layout = QHBoxLayout()
+        self._layout.setContentsMargins(2, 2, 2, 2)
+        self._layout.setSpacing(6)
+        self.setLayout(self._layout)
 
         self.offset = 0
-        self.limit = 0
+        self.limit = 25
         self.count = 0
 
-        self.nav_label = QLabel()
+        self.summary_label = QLabel("No results")
+        self.summary_label.setObjectName("secondaryText")
 
-        self.left_button = QPushButton()
-        self.left_button.setIcon(QIcon(str(get_asset_path("images/arrow_left.png"))))
+        self.first_button = QPushButton("<<")
+        self.first_button.setToolTip("First page")
+        self.first_button.pressed.connect(self.first_press)
+
+        self.left_button = QPushButton("<")
+        self.left_button.setToolTip("Previous page")
         self.left_button.pressed.connect(self.left_press)
 
-        self.right_button = QPushButton()
-        self.right_button.setIcon(QIcon(str(get_asset_path("images/arrow_right.png"))))
+        self.page_button = QPushButton("Page 0 / 0")
+        self.page_button.setToolTip("Jump to page")
+        self.page_button.pressed.connect(self.prompt_jump)
+
+        self.right_button = QPushButton(">")
+        self.right_button.setToolTip("Next page")
         self.right_button.pressed.connect(self.right_press)
 
-        self.layout().addWidget(self.nav_label, stretch=1)
-        self.layout().addWidget(self.left_button)
-        self.layout().addWidget(self.right_button)
+        self.last_button = QPushButton(">>")
+        self.last_button.setToolTip("Last page")
+        self.last_button.pressed.connect(self.last_press)
+
+        self._layout.addWidget(self.summary_label, 1)
+        self._layout.addWidget(self.first_button)
+        self._layout.addWidget(self.left_button)
+        self._layout.addWidget(self.page_button)
+        self._layout.addWidget(self.right_button)
+        self._layout.addWidget(self.last_button)
 
         self.update_nav()
 
-    def left_press(self):
-        self.offset -= self.limit
-        self.update_nav()
-        self.left_signal.emit()
+    @property
+    def page_count(self) -> int:
+        if self.count <= 0 or self.limit <= 0:
+            return 0
+        return int(ceil(self.count / float(self.limit)))
 
-    def right_press(self):
-        self.offset += self.limit
-        self.update_nav()
-        self.right_signal.emit()
-
-    def update_nav(self):
-        self.offset = max(0, self.offset)  # If < 0, fixes
-        left_bound = self.offset + 1
-        right_bound = self.offset + self.limit
-        count_msg = ""
-
-        if self.count:
-            right_bound = min(right_bound, self.count)  # Limit to count
-            count_msg = " of {}".format(self.count)
-
-        self.nav_label.setText("{} - {}".format(left_bound, right_bound) + count_msg)
-
-        # Disable buttons if hit boundaries
-        self.left_button.setEnabled(left_bound > 1)
-        if self.count:
-            self.right_button.setEnabled(right_bound < self.count)
-
-    def set_offset(self, offset):
-        self.offset = offset
-        self.update_nav()
-
-    def set_limit(self, limit):
-        self.limit = limit
-        self.update_nav()
-
-    def set_count(self, count):
-        self.count = count
-        self.update_nav()
+    @property
+    def current_page(self) -> int:
+        if self.limit <= 0:
+            return 0
+        return int(self.offset // self.limit) + 1
 
     @property
     def slice(self):
         return slice(self.offset, self.offset + self.limit)
 
-    def mouseDoubleClickEvent(self, a0: QtGui.QMouseEvent) -> None:
-        if not self.left_button.isEnabled() and not self.right_button.isEnabled():
+    def _last_page_offset(self) -> int:
+        pages = self.page_count
+        if pages <= 1:
+            return 0
+        return (pages - 1) * self.limit
+
+    def _emit_for_step(self, old_offset: int):
+        if self.offset == old_offset:
+            return
+        if self.offset < old_offset:
+            self.left_signal.emit()
+        else:
+            self.right_signal.emit()
+
+    def first_press(self):
+        old_offset = self.offset
+        self.offset = 0
+        self.update_nav()
+        self._emit_for_step(old_offset)
+
+    def left_press(self):
+        old_offset = self.offset
+        self.offset = max(0, self.offset - self.limit)
+        self.update_nav()
+        self._emit_for_step(old_offset)
+
+    def right_press(self):
+        old_offset = self.offset
+        self.offset = min(self._last_page_offset(), self.offset + self.limit)
+        self.update_nav()
+        self._emit_for_step(old_offset)
+
+    def last_press(self):
+        old_offset = self.offset
+        self.offset = self._last_page_offset()
+        self.update_nav()
+        self._emit_for_step(old_offset)
+
+    def prompt_jump(self):
+        if self.page_count <= 1:
             return
 
-        imaged_moment_desired, ok = QInputDialog.getInt(
-            self, "Jump to imaged moment", "Jump to imaged moment:"
+        page, ok = QInputDialog.getInt(
+            self,
+            "Jump to page",
+            "Page number:",
+            min=self.current_page,
+            max=self.page_count,
         )
-        if ok and 0 < imaged_moment_desired <= self.count:
-            self.set_offset(imaged_moment_desired - 1)
-            self.jump_signal.emit()
+        if not ok:
+            return
+
+        self.offset = (page - 1) * self.limit
+        self.update_nav()
+        self.jump_signal.emit()
+
+    def update_nav(self):
+        if self.limit <= 0:
+            self.limit = 25
+
+        if self.count <= 0:
+            self.offset = 0
+            self.summary_label.setText("No results")
+            self.page_button.setText("Page 0 / 0")
+            for btn in (
+                self.first_button,
+                self.left_button,
+                self.page_button,
+                self.right_button,
+                self.last_button,
+            ):
+                btn.setEnabled(False)
+            return
+
+        self.offset = max(0, min(self.offset, self._last_page_offset()))
+
+        left_bound = self.offset + 1
+        right_bound = min(self.offset + self.limit, self.count)
+        self.summary_label.setText(
+            "Showing {} - {} of {}".format(left_bound, right_bound, self.count)
+        )
+
+        pages = self.page_count
+        current = self.current_page
+        self.page_button.setText("Page {} / {}".format(current, pages))
+
+        self.first_button.setEnabled(current > 1)
+        self.left_button.setEnabled(current > 1)
+        self.page_button.setEnabled(pages > 1)
+        self.right_button.setEnabled(current < pages)
+        self.last_button.setEnabled(current < pages)
+
+    def set_offset(self, offset: int):
+        self.offset = max(0, int(offset))
+        self.update_nav()
+
+    def set_limit(self, limit: int):
+        self.limit = max(1, int(limit))
+        self.update_nav()
+
+    def set_count(self, count: int):
+        self.count = max(0, int(count))
+        self.update_nav()
+
+    def mouseDoubleClickEvent(self, a0: Optional[QtGui.QMouseEvent]) -> None:
+        if a0 is None:
+            return
+        self.prompt_jump()

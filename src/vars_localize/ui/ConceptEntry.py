@@ -25,9 +25,6 @@ class ConceptEntry(QListWidgetItem):
         return self.ann_data
 
     def update_message(self):
-        """
-        Set message based on annotation data
-        :return: None
-        """
+        """Set display message based on annotation data."""
         str_rep = "{0}: {1}".format(self.ann_data["concept"], self.ann_data["timecode"])
         self.setText(str_rep)

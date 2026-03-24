@@ -1,0 +1,440 @@
+"""Local SAM3 integration helper with optional ultralytics dependency."""
+
+from __future__ import annotations
+
+import gc
+import os
+import threading
+from typing import Any, Iterable, List, Optional, Sequence, Tuple, cast
+
+from vars_localize.util.utils import log
+
+
+class SAM3Service:
+    """Thin wrapper around ultralytics SAM3 semantic predictor.
+
+    The class is import-safe when the optional sam extra is not installed.
+    """
+
+    def __init__(self, model_path: str, conf: float = 0.35, imgsz: int = 644):
+        self._model = (model_path or "").strip()
+        self._conf = conf
+        self._imgsz = max(64, int(imgsz))
+        self._device = "cpu"
+        self._base_overrides = dict(
+            conf=self._conf,
+            task="segment",
+            mode="predict",
+            model=self._model,
+            imgsz=self._imgsz,
+            compile=False,
+            save=False,
+            verbose=False,
+        )
+        self._semantic_predictor = None
+        self._point_predictor = None
+        self._predictor_lock = threading.RLock()
+        self._predictor_ready = False
+        self._image_rgb = None
+        self._semantic_features = None
+        self._point_features = None
+        self._src_shape = None
+        self._import_error = None
+
+        self.ensure_loaded()
+
+    def _validate_model_path(self) -> Optional[Exception]:
+        if not self._model:
+            return ValueError(
+                "No SAM3 model path configured. Set the model path in Settings."
+            )
+        if not os.path.isfile(self._model):
+            return FileNotFoundError(
+                "SAM3 model file not found: {}".format(self._model)
+            )
+        return None
+
+    def configure_runtime(
+        self,
+        model_path: Optional[str] = None,
+        conf: Optional[float] = None,
+        imgsz: Optional[int] = None,
+    ):
+        if model_path is not None:
+            self._model = (model_path or "").strip()
+        if conf is not None:
+            self._conf = max(0.0, min(1.0, float(conf)))
+        if imgsz is not None:
+            self._imgsz = max(64, int(imgsz))
+
+        self._base_overrides["model"] = self._model
+        self._base_overrides["conf"] = self._conf
+        self._base_overrides["imgsz"] = self._imgsz
+
+        predictor = self._semantic_predictor
+        point_predictor = self._point_predictor
+        for predictor in (predictor, point_predictor):
+            if predictor is None:
+                continue
+            try:
+                args = getattr(predictor, "args", None)
+                if args is not None:
+                    setattr(args, "conf", self._conf)
+                    setattr(args, "imgsz", self._imgsz)
+                overrides = getattr(predictor, "overrides", None)
+                if isinstance(overrides, dict):
+                    overrides["conf"] = self._conf
+                    overrides["imgsz"] = self._imgsz
+            except Exception:
+                # Best-effort update; predictor internals can vary by ultralytics version.
+                pass
+
+        if self.available:
+            self._import_error = None
+        else:
+            self._import_error = self._validate_model_path()
+
+    def ensure_loaded(self) -> bool:
+        with self._predictor_lock:
+            if self.available:
+                return True
+
+            validation_error = self._validate_model_path()
+            if validation_error is not None:
+                self._import_error = validation_error
+                return False
+
+            try:
+                self._device = self._select_device()
+                self._build_predictors(self._device)
+                self._import_error = None
+                return True
+            except (
+                Exception
+            ) as exc:  # pragma: no cover - depends on optional install/runtime
+                self._import_error = exc
+                log("[SAM3] Predictor init failed: {}".format(exc), level=2)
+                return False
+
+    def _build_predictors(self, device: str):
+        from ultralytics.models.sam import SAM3Predictor, SAM3SemanticPredictor
+
+        overrides = self._make_overrides(device)
+
+        # Semantic predictor handles text grounding.
+        self._semantic_predictor = SAM3SemanticPredictor(overrides=dict(overrides))
+        # Interactive predictor handles point prompts.
+        self._point_predictor = SAM3Predictor(overrides=dict(overrides))
+        self._predictor_ready = False
+        self._device = device
+
+    def _make_overrides(self, device: str) -> dict:
+        overrides = dict(self._base_overrides)
+        overrides["device"] = device
+        return overrides
+
+    def _cleanup_predictors(self):
+        self._semantic_predictor = None
+        self._point_predictor = None
+        self._predictor_ready = False
+        self._semantic_features = None
+        self._point_features = None
+        self._src_shape = None
+        self._image_rgb = None
+        gc.collect()
+        try:
+            import torch
+
+            if bool(torch.cuda.is_available()):
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _select_device() -> str:
+        try:
+            import torch
+
+            if bool(torch.cuda.is_available()):
+                return "0"
+        except Exception as exc:
+            log(
+                "[SAM3] torch device probe failed, defaulting to CPU: {}".format(exc),
+                level=1,
+            )
+
+        return "cpu"
+
+    def _recreate_predictor(self, device: str):
+        self._cleanup_predictors()
+        self._build_predictors(device)
+
+    @property
+    def available(self) -> bool:
+        return (
+            self._semantic_predictor is not None and self._point_predictor is not None
+        )
+
+    @property
+    def availability_error(self) -> Optional[str]:
+        if self._import_error is None:
+            return None
+        return str(self._import_error)
+
+    @property
+    def point_predictor_loaded(self) -> bool:
+        return self.available
+
+    @property
+    def point_predictor_ready(self) -> bool:
+        return bool(self._predictor_ready)
+
+    @property
+    def point_predictor_init_failed(self) -> bool:
+        return not self.available and self._import_error is not None
+
+    @property
+    def point_prompt_state(self) -> str:
+        if not self.available:
+            return "unavailable"
+        if self._predictor_ready:
+            return "ready"
+        return "loading"
+
+    def set_image(self, image_rgb, image_key: Optional[str] = None):
+        with self._predictor_lock:
+            if not self.available:
+                raise RuntimeError("SAM3 service is unavailable")
+            _ = image_key
+
+            semantic_predictor = cast(Any, self._semantic_predictor)
+            point_predictor = cast(Any, self._point_predictor)
+            try:
+                semantic_predictor.set_image(image_rgb)
+                point_predictor.set_image(image_rgb)
+            except Exception as exc:
+                message = str(exc)
+                if self._device != "cpu" and (
+                    "Invalid CUDA" in message or "device=" in message
+                ):
+                    log(
+                        "[SAM3] device {} failed during set_image; retrying on CPU".format(
+                            self._device
+                        ),
+                        level=1,
+                    )
+                    self._recreate_predictor("cpu")
+                    semantic_predictor = cast(Any, self._semantic_predictor)
+                    point_predictor = cast(Any, self._point_predictor)
+                    semantic_predictor.set_image(image_rgb)
+                    point_predictor.set_image(image_rgb)
+                else:
+                    raise
+
+            self._predictor_ready = True
+            self._image_rgb = image_rgb
+
+            self._semantic_features = semantic_predictor.features
+            self._point_features = point_predictor.features
+            self._src_shape = image_rgb.shape[:2]
+            self._reset_semantic_prompt_state(semantic_predictor)
+            try:
+                self._prime_point_prompt_context(semantic_predictor)
+            except Exception as exc:
+                log("[SAM3] neutral point context init failed: {}".format(exc), level=1)
+
+            # log(
+            #     "[SAM3] set_image complete: src_shape={} feature_ready={}".format(
+            #         self._src_shape,
+            #         self._semantic_features is not None and self._point_features is not None,
+            #     ),
+            #     level=1,
+            # )
+
+    def _reset_semantic_prompt_state(self, predictor: Optional[Any] = None) -> bool:
+        """Clear semantic/text state so point prompting stays prompt-independent."""
+        changed = False
+
+        active = predictor
+        if active is None:
+            active = self._semantic_predictor
+        if active is None:
+            return changed
+
+        reset_prompts = getattr(active, "reset_prompts", None)
+        if callable(reset_prompts):
+            try:
+                reset_prompts()
+                changed = True
+            except Exception as exc:
+                log("[SAM3] reset_prompts failed: {}".format(exc), level=1)
+
+        prompts = getattr(active, "prompts", None)
+        if isinstance(prompts, dict):
+            prompts.clear()
+            changed = True
+
+        return changed
+
+    def query_text(self, text: str) -> List[Tuple[int, int, int, int]]:
+        with self._predictor_lock:
+            if not self.available:
+                raise RuntimeError("SAM3 service is unavailable")
+            if self._semantic_features is None or self._src_shape is None:
+                return []
+            if not text.strip():
+                return []
+
+            predictor = cast(Any, self._semantic_predictor)
+            self._reset_semantic_prompt_state(predictor)
+            try:
+                masks, boxes = predictor.inference_features(
+                    self._semantic_features,
+                    src_shape=self._src_shape,
+                    text=[text],
+                )
+            finally:
+                self._reset_semantic_prompt_state(predictor)
+                try:
+                    self._prime_point_prompt_context(predictor)
+                except Exception as exc:
+                    log(
+                        "[SAM3] neutral point context reset failed: {}".format(exc),
+                        level=1,
+                    )
+
+            normalized = self._normalize_mask_boxes(masks)
+            if normalized:
+                return normalized
+            return self._normalize_boxes(boxes)
+
+    def query_point(self, x: int, y: int) -> List[Tuple[int, int, int, int]]:
+        with self._predictor_lock:
+            if not self.available:
+                raise RuntimeError("SAM3 service is unavailable")
+            if self._src_shape is None:
+                log("[SAM3] query_point skipped: src_shape not ready", level=1)
+                return []
+            if self._image_rgb is None:
+                log("[SAM3] query_point skipped: image not loaded", level=1)
+                return []
+            if self._point_features is None:
+                log("[SAM3] query_point skipped: point features not ready", level=1)
+                return []
+
+            predictor = cast(Any, self._point_predictor)
+            # log("[SAM3] query_point at ({}, {})".format(x, y), level=1)
+            try:
+                masks, boxes = predictor.inference_features(
+                    self._point_features,
+                    src_shape=self._src_shape,
+                    points=[[x, y]],
+                    labels=[1],
+                    multimask_output=False,
+                )
+            except Exception as exc:
+                log("[SAM3] predictor point query failed: {}".format(exc), level=2)
+                return []
+
+            normalized = self._normalize_mask_boxes(masks)
+            if normalized:
+                # log("[SAM3] query_point mask boxes: {}".format(len(normalized)), level=1)
+                return normalized
+            normalized_boxes = self._normalize_boxes(boxes)
+            # log("[SAM3] query_point bbox boxes: {}".format(len(normalized_boxes)), level=1)
+            return normalized_boxes
+
+    @staticmethod
+    def _normalize_mask_boxes(masks: object) -> List[Tuple[int, int, int, int]]:
+        if masks is None:
+            return []
+
+        arr = cast(Any, masks)
+        cpu_attr = getattr(arr, "cpu", None)
+        if callable(cpu_attr):
+            arr = cpu_attr()
+        numpy_attr = getattr(arr, "numpy", None)
+        if callable(numpy_attr):
+            arr = numpy_attr()
+
+        try:
+            import numpy as np
+        except Exception:
+            return []
+
+        np_arr = np.asarray(arr)
+        if np_arr.ndim == 2:
+            np_arr = np_arr[None, ...]
+        elif np_arr.ndim != 3:
+            return []
+
+        normalized: List[Tuple[int, int, int, int]] = []
+        for mask in np_arr:
+            ys, xs = np.where(mask > 0)
+            if xs.size == 0 or ys.size == 0:
+                continue
+
+            x1 = int(xs.min())
+            y1 = int(ys.min())
+            x2 = int(xs.max())
+            y2 = int(ys.max())
+
+            w = x2 - x1 + 1
+            h = y2 - y1 + 1
+            if w <= 1 or h <= 1:
+                continue
+            normalized.append((x1, y1, w, h))
+
+        return normalized
+
+    @staticmethod
+    def _normalize_boxes(boxes: object) -> List[Tuple[int, int, int, int]]:
+        if boxes is None:
+            return []
+
+        arr = cast(Any, boxes)
+        cpu_attr = getattr(arr, "cpu", None)
+        if callable(cpu_attr):
+            arr = cpu_attr()
+        numpy_attr = getattr(arr, "numpy", None)
+        if callable(numpy_attr):
+            arr = numpy_attr()
+
+        tolist_attr = getattr(arr, "tolist", None)
+        if callable(tolist_attr):
+            rows = tolist_attr()
+        else:
+            rows = arr
+
+        if not isinstance(rows, Iterable):
+            return []
+
+        normalized: List[Tuple[int, int, int, int]] = []
+        for row in rows:
+            if not isinstance(row, Sequence) or len(row) < 4:
+                continue
+            x1 = int(round(float(row[0])))
+            y1 = int(round(float(row[1])))
+            x2 = int(round(float(row[2])))
+            y2 = int(round(float(row[3])))
+
+            x = min(x1, x2)
+            y = min(y1, y2)
+            w = abs(x2 - x1)
+            h = abs(y2 - y1)
+            if w <= 1 or h <= 1:
+                continue
+            normalized.append((x, y, w, h))
+        return normalized
+
+    @staticmethod
+    def _prime_point_prompt_context(predictor: Any):
+        """Ensure point prompting has a neutral language context in SAM3."""
+        model = getattr(predictor, "model", None)
+        if model is None:
+            return
+
+        set_classes = getattr(model, "set_classes", None)
+        if callable(set_classes):
+            # SAM3 grounding can require language features even for point prompts.
+            set_classes(text=["visual"])

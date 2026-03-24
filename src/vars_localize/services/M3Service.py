@@ -1,274 +1,402 @@
 """Service facade around M3 utility functions."""
 
-import json
-from typing import List, Optional
+from base64 import b64encode
+from typing import Any, Dict, List, Optional
 
 import requests
-import requests.auth
 from PyQt6.QtGui import QPixmap
 
-from vars_localize.util import endpoints, utils
+from vars_localize.services.clients import (
+    AnnosaurusClient,
+    OniClient,
+    VampireSquidClient,
+)
+from vars_localize.util.logging import get_logger
 
-
-class BasicJWTAuth(requests.auth.AuthBase):
-    def __init__(self, token: str):
-        self.token = token
-
-    def __call__(self, r):
-        r.headers["Authorization"] = "BEARER " + self.token
-        return r
+DEFAULT_M3_URL = "https://m3.shore.mbari.org/config"
+logger = get_logger("M3Service")
 
 
 class M3Service:
-    """Instance-based service for M3 operations and HTTP session state."""
+    """Compatibility facade over service-specific API clients.
+
+    This class owns:
+    - Raziel authentication and endpoint discovery
+    - Client construction and lifecycle
+    - Legacy method names used by existing UI/service callers
+
+    Args:
+        m3_url: M3 Raziel base URL.
+    """
 
     def __init__(self, m3_url: str):
+        """Create an orchestrator bound to an M3 config server URL.
+
+        Args:
+            m3_url: M3 Raziel base URL.
+        """
         self._m3_url = m3_url.rstrip("/")
         self._default_session = requests.Session()
-        self._anno_session = requests.Session()
-        self._kb_concepts = None
-        self._kb_parts = None
+        self._endpoints: Optional[Dict[str, Dict[str, Any]]] = None
+        self._annosaurus: Optional[AnnosaurusClient] = None
+        self._oni: Optional[OniClient] = None
+        self._vampire_squid: Optional[VampireSquidClient] = None
 
     @property
     def m3_url(self) -> str:
+        """Return the configured M3 config service URL.
+
+        Returns:
+            M3 Raziel base URL.
+        """
         return self._m3_url
 
-    def check_connection(self, timeout_secs: int = 3) -> bool:
+    def check_connection(self, timeout_secs: int = 3) -> None:
+        """Ensure the M3 config service responds to /health.
+
+        Args:
+            timeout_secs: Timeout in seconds.
+
+        Raises:
+            ConnectionError: If the health check fails or returns a non-200 response.
+        """
         try:
             r = self._default_session.get(
                 self._m3_url + "/health", timeout=max(1, int(timeout_secs))
             )
-            return r.status_code == 200
+            if r.status_code != 200:
+                raise ConnectionError(
+                    "M3 health check failed with status code {}.".format(r.status_code)
+                )
         except requests.RequestException as e:
-            utils.log(f"Connection check failed: {e}", level=2)
-            return False
+            raise ConnectionError("Connection check failed: {}".format(e)) from e
 
-    def configure(self, username: str, password: str):
-        endpoints.configure(self._m3_url, username, password)
-        if not self.jwt_auth(self._anno_session, endpoints.Annosaurus):
-            raise RuntimeError("Failed to authenticate with Annosaurus")
+    def _fetch_endpoints(self, username: str, password: str) -> None:
+        """Authenticate with Raziel and populate endpoint metadata.
 
-    def _require_anno_auth(self):
-        if self._anno_session.auth is None:
-            raise Exception("Session must be authenticated")
+        Args:
+            username: Raziel username.
+            password: Raziel password.
 
-    def jwt_auth(
-        self, session: requests.Session, endpoint: endpoints.ConfigEndpoint
-    ) -> bool:
-        try:
-            response = session.post(
-                endpoint.AUTH,
-                headers={"Authorization": "APIKEY {}".format(endpoint.SECRET)},
+        Raises:
+            Exception: If Raziel authentication fails.
+        """
+        # Raziel expects HTTP Basic credentials for the auth token request.
+        user_pass_base64 = "Basic " + b64encode(
+            "{}:{}".format(username, password).encode("utf-8")
+        ).decode("utf-8")
+
+        res = requests.post(
+            self._m3_url + "/auth", headers={"Authorization": user_pass_base64}
+        )
+        if res.status_code != 200:
+            raise Exception(
+                "Failed to authenticate with Raziel (code {}): {}".format(
+                    res.status_code, res.json()["message"]
+                )
             )
-            response.raise_for_status()
 
-            token = response.json()["access_token"]
-            session.auth = BasicJWTAuth(token)
-            return True
-        except Exception as e:
-            utils.log("Authentication failed.", level=2)
-            utils.log(e, level=2)
-            return False
+        token = res.json()["accessToken"]
+        self._endpoints = {
+            endpoint["name"]: endpoint
+            for endpoint in requests.get(
+                self._m3_url + "/endpoints",
+                headers={"Authorization": "Bearer " + token},
+            ).json()
+        }
 
-    def get_all_users(self) -> list:
-        response = self._default_session.get(endpoints.VARSUserServer.ALL_USERS)
-        response.raise_for_status()
-        return response.json()
+    def _get_endpoint(self, name: str) -> Dict[str, Any]:
+        """Return a required endpoint by name.
+
+        Args:
+            name: Endpoint key.
+
+        Returns:
+            Endpoint metadata.
+
+        Raises:
+            Exception: If service is not configured or endpoint is missing.
+        """
+        if self._endpoints is None:
+            raise Exception("You must call configure() before accessing endpoints.")
+        if name not in self._endpoints:
+            raise Exception("No endpoint named {}".format(name))
+        return self._endpoints[name]
+
+    def _find_endpoint(self, *names: str) -> Optional[Dict[str, Any]]:
+        """Return the first configured endpoint from a list of names.
+
+        Args:
+            *names: Candidate endpoint keys in search order.
+
+        Returns:
+            Endpoint metadata for the first match, else None.
+
+        Raises:
+            Exception: If service is not configured.
+        """
+        if self._endpoints is None:
+            raise Exception("You must call configure() before accessing endpoints.")
+        for name in names:
+            endpoint = self._endpoints.get(name)
+            if endpoint is not None:
+                return endpoint
+        return None
+
+    def configure(self, username: str, password: str) -> None:
+        """Configure and authenticate all backing clients.
+
+        Args:
+            username: Raziel username.
+            password: Raziel password.
+
+        Raises:
+            RuntimeError: If required endpoints are missing or auth fails.
+        """
+        self._fetch_endpoints(username, password)
+
+        annosaurus_endpoint = self._get_endpoint(AnnosaurusClient.SERVICE_NAME)
+        oni_endpoint = self._find_endpoint(OniClient.SERVICE_NAME)
+        if oni_endpoint is None:
+            raise RuntimeError("No endpoint named oni")
+        vampire_squid_endpoint = self._get_endpoint(VampireSquidClient.SERVICE_NAME)
+
+        self._annosaurus = AnnosaurusClient(annosaurus_endpoint)
+        self._oni = OniClient(oni_endpoint, self._default_session)
+        self._vampire_squid = VampireSquidClient(
+            vampire_squid_endpoint, self._default_session
+        )
+
+        self._annosaurus.authenticate()
+
+    def _require_clients(self) -> None:
+        """Ensure configure() has been completed before API usage.
+
+        Raises:
+            Exception: If clients are not initialized.
+        """
+        if self._annosaurus is None or self._oni is None or self._vampire_squid is None:
+            raise Exception("Service must be configured")
+
+    def _annosaurus_client(self) -> AnnosaurusClient:
+        """Return configured annosaurus client.
+
+        Returns:
+            Configured AnnosaurusClient.
+        """
+        self._require_clients()
+        assert self._annosaurus is not None
+        return self._annosaurus
+
+    def _oni_client(self) -> OniClient:
+        """Return configured oni client.
+
+        Returns:
+            Configured OniClient.
+        """
+        self._require_clients()
+        assert self._oni is not None
+        return self._oni
+
+    def _vampire_squid_client(self) -> VampireSquidClient:
+        """Return configured vampire-squid client.
+
+        Returns:
+            Configured VampireSquidClient.
+        """
+        self._require_clients()
+        assert self._vampire_squid is not None
+        return self._vampire_squid
+
+    def get_all_users(self) -> List[Dict[str, Any]]:
+        """Compatibility wrapper for OniClient.get_all_users.
+
+        Returns:
+            User records.
+        """
+        return self._oni_client().get_all_users()
 
     def get_all_concepts(self) -> List[str]:
-        if self._kb_concepts is None:
-            response = self._default_session.get(endpoints.VARSKBServer.ALL_CONCEPTS)
-            response.raise_for_status()
-            self._kb_concepts = response.json()
-        return self._kb_concepts
+        """Compatibility wrapper for OniClient.get_all_concepts.
+
+        Returns:
+            Concept names.
+        """
+        return self._oni_client().get_all_concepts()
 
     def get_imaged_moment_uuids(self, concept: str) -> List[str]:
-        self._require_anno_auth()
-        response = self._anno_session.get(
-            endpoints.Annosaurus.IMAGED_MOMENTS_BY_CONCEPT + "/" + concept
+        """Compatibility wrapper for AnnosaurusClient.get_imaged_moment_uuids.
+
+        Args:
+            concept: Concept name.
+
+        Returns:
+            Imaged moment UUIDs.
+        """
+        return self._annosaurus_client().get_imaged_moment_uuids(concept)
+
+    def get_imaged_moment(self, imaged_moment_uuid: str) -> Dict[str, Any]:
+        """Compatibility wrapper for AnnosaurusClient.get_imaged_moment.
+
+        Args:
+            imaged_moment_uuid: Imaged moment UUID.
+
+        Returns:
+            Imaged moment payload.
+        """
+        return self._annosaurus_client().get_imaged_moment(imaged_moment_uuid)
+
+    def get_imaged_moments_by_image_reference(
+        self, image_reference_uuid: str
+    ) -> Optional[Any]:
+        """Compatibility wrapper for image-reference lookup.
+
+        Args:
+            image_reference_uuid: Image reference UUID.
+
+        Returns:
+            Parsed payload or None when downstream call fails.
+        """
+        return self._annosaurus_client().get_imaged_moments_by_image_reference(
+            image_reference_uuid
         )
-        return response.json()
 
-    def get_imaged_moment(self, imaged_moment_uuid: str) -> dict:
-        self._require_anno_auth()
-        response = self._anno_session.get(
-            endpoints.Annosaurus.IMAGED_MOMENT + "/" + imaged_moment_uuid
+    def get_annotations_by_video_reference(
+        self, video_reference_uuid: str
+    ) -> Optional[Any]:
+        """Compatibility wrapper for video-reference annotation lookup.
+
+        Args:
+            video_reference_uuid: Video reference UUID.
+
+        Returns:
+            Parsed payload or None when downstream call fails.
+        """
+        return self._annosaurus_client().get_annotations_by_video_reference(
+            video_reference_uuid
         )
-        return response.json()
 
-    def get_imaged_moments_by_image_reference(self, image_reference_uuid: str):
-        try:
-            response = self._default_session.get(
-                endpoints.Annosaurus.IMAGED_MOMENTS_BY_IMAGE_REFERENCE
-                + "/"
-                + image_reference_uuid
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            utils.log(
-                "Could not fetch imaged moment data for image reference {}".format(
-                    image_reference_uuid
-                ),
-                level=1,
-            )
-            utils.log(e, level=1)
+    def delete_observation(self, observation_uuid: str) -> Optional[requests.Response]:
+        """Compatibility wrapper for observation deletion.
 
-    def get_annotations_by_video_reference(self, video_reference_uuid: str):
-        try:
-            response = self._default_session.get(
-                endpoints.Annosaurus.ANNOTATIONS_BY_VIDEO_REFERENCE
-                + "/"
-                + video_reference_uuid,
-                params={"data": True},
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            utils.log(
-                "Could not fetch annotation data for video reference {}".format(
-                    video_reference_uuid
-                ),
-                level=1,
-            )
-            utils.log(e, level=1)
+        Args:
+            observation_uuid: Observation UUID.
 
-    def delete_observation(self, observation_uuid: str):
-        self._require_anno_auth()
-        try:
-            response = self._anno_session.delete(
-                endpoints.Annosaurus.DELETE_OBSERVATION + "/" + observation_uuid
-            )
-            response.raise_for_status()
-            return response
-        except Exception as e:
-            utils.log("Observation deletion failed.", level=2)
-            utils.log(e, level=2)
+        Returns:
+            Response on success, else None.
+        """
+        return self._annosaurus_client().delete_observation(observation_uuid)
 
     def rename_observation(
         self, observation_uuid: str, new_concept: str, observer: str
-    ):
-        self._require_anno_auth()
-        request_data = {"concept": new_concept, "observer": observer}
-        try:
-            response = self._anno_session.put(
-                endpoints.Annosaurus.OBSERVATION + "/" + observation_uuid,
-                data=request_data,
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            utils.log("Concept rename failed.", level=2)
-            utils.log(e, level=2)
+    ) -> Optional[Dict[str, Any]]:
+        """Compatibility wrapper for observation rename.
+
+        Args:
+            observation_uuid: Observation UUID.
+            new_concept: New concept name.
+            observer: Observer identifier.
+
+        Returns:
+            Parsed payload or None.
+        """
+        return self._annosaurus_client().rename_observation(
+            observation_uuid, new_concept, observer
+        )
 
     def create_observation(
         self,
-        video_reference_uuid,
-        concept,
-        observer,
-        timecode=None,
-        elapsed_time_millis=None,
-        recorded_timestamp=None,
-    ) -> Optional[dict]:
-        self._require_anno_auth()
-        request_data = {
-            "video_reference_uuid": video_reference_uuid,
-            "concept": concept,
-            "observer": observer,
-            "activity": "localize",
-            "group": "ROV:training-set",
-        }
+        video_reference_uuid: str,
+        concept: str,
+        observer: str,
+        timecode: Optional[str] = None,
+        elapsed_time_millis: Optional[int] = None,
+        recorded_timestamp: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Compatibility wrapper for observation creation.
 
-        if not (timecode or elapsed_time_millis or recorded_timestamp):
-            utils.log(
-                "No observation index provided. Observation creation failed.", level=2
-            )
-            return None
+        Args:
+            video_reference_uuid: Video reference UUID.
+            concept: Concept name.
+            observer: Observer identifier.
+            timecode: Optional SMPTE-like timecode.
+            elapsed_time_millis: Optional elapsed time in milliseconds.
+            recorded_timestamp: Optional recorded timestamp.
 
-        if timecode:
-            request_data["timecode"] = timecode
-        if elapsed_time_millis:
-            request_data["elapsed_time_millis"] = int(elapsed_time_millis)
-        if recorded_timestamp:
-            request_data["recorded_timestamp"] = recorded_timestamp
-
-        try:
-            response = self._anno_session.post(
-                endpoints.Annosaurus.OBSERVATION, data=request_data
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            utils.log("Observation creation failed.", level=2)
-            utils.log(e, level=2)
+        Returns:
+            Parsed payload or None.
+        """
+        return self._annosaurus_client().create_observation(
+            video_reference_uuid,
+            concept,
+            observer,
+            timecode,
+            elapsed_time_millis,
+            recorded_timestamp,
+        )
 
     def create_box(
-        self, box_json, observation_uuid: str, to_concept: Optional[str] = None
-    ) -> Optional[dict]:
-        self._require_anno_auth()
-        request_data = {
-            "observation_uuid": observation_uuid,
-            "link_name": "bounding box",
-            "link_value": json.dumps(box_json),
-            "mime_type": "application/json",
-        }
+        self,
+        box_json: Dict[str, Any],
+        observation_uuid: str,
+        to_concept: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Compatibility wrapper for bounding-box creation.
 
-        if to_concept is not None:
-            request_data["to_concept"] = to_concept
+        Args:
+            box_json: Bounding box payload.
+            observation_uuid: Observation UUID.
+            to_concept: Optional target concept.
 
-        try:
-            response = self._anno_session.post(
-                endpoints.Annosaurus.ASSOCIATION,
-                data=request_data,
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            utils.log("Box creation failed.", level=2)
-            utils.log(e, level=2)
+        Returns:
+            Parsed payload or None.
+        """
+        return self._annosaurus_client().create_box(
+            box_json, observation_uuid, to_concept
+        )
 
     def modify_box(
         self,
-        box_json,
+        box_json: Dict[str, Any],
         observation_uuid: str,
         association_uuid: str,
         to_concept: Optional[str] = None,
-    ) -> Optional[dict]:
-        self._require_anno_auth()
-        request_data = {
-            "observation_uuid": observation_uuid,
-            "link_name": "bounding box",
-            "link_value": json.dumps(box_json),
-            "mime_type": "application/json",
-        }
+    ) -> Optional[Dict[str, Any]]:
+        """Compatibility wrapper for bounding-box modification.
 
-        if to_concept is not None:
-            request_data["to_concept"] = to_concept
+        Args:
+            box_json: Bounding box payload.
+            observation_uuid: Observation UUID.
+            association_uuid: Association UUID.
+            to_concept: Optional target concept.
 
-        try:
-            response = self._anno_session.put(
-                endpoints.Annosaurus.ASSOCIATION + "/" + association_uuid,
-                data=request_data,
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            utils.log("Box modification failed.", level=2)
-            utils.log(e, level=2)
+        Returns:
+            Parsed payload or None.
+        """
+        return self._annosaurus_client().modify_box(
+            box_json, observation_uuid, association_uuid, to_concept
+        )
 
-    def delete_box(self, association_uuid: str):
-        self._require_anno_auth()
-        try:
-            response = self._anno_session.delete(
-                endpoints.Annosaurus.ASSOCIATION + "/" + association_uuid
-            )
-            response.raise_for_status()
-            return response
-        except Exception as e:
-            utils.log("Box deletion failed.", level=2)
-            utils.log(e, level=2)
+    def delete_box(self, association_uuid: str) -> Optional[requests.Response]:
+        """Compatibility wrapper for bounding-box deletion.
 
-    def fetch_image(self, url: str):
+        Args:
+            association_uuid: Association UUID.
+
+        Returns:
+            Response on success, else None.
+        """
+        return self._annosaurus_client().delete_box(association_uuid)
+
+    def fetch_image(self, url: str) -> Optional[QPixmap]:
+        """Fetch an image URL and convert it into a QPixmap.
+
+        Args:
+            url: Image URL.
+
+        Returns:
+            QPixmap on success, else None.
+        """
         try:
             response = self._default_session.get(url)
             response.raise_for_status()
@@ -276,48 +404,38 @@ class M3Service:
             pixmap.loadFromData(response.content)
             return pixmap
         except Exception:
-            utils.log("Could not fetch image at {}".format(url), level=1)
+            logger.warning("Could not fetch image at {}", url)
 
     def get_all_parts(self) -> List[str]:
-        if self._kb_parts is None:
-            response = self._default_session.get(endpoints.VARSKBServer.ALL_PARTS)
-            response.raise_for_status()
-            self._kb_parts = [el["name"] for el in response.json()]
-        return self._kb_parts
+        """Compatibility wrapper for OniClient.get_all_parts.
 
-    def get_video_data(self, video_reference_uuid: str):
-        try:
-            response = self._default_session.get(
-                endpoints.VampireSquid.VIDEO_DATA + "/" + video_reference_uuid
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            utils.log(
-                "Could not fetch video data for {}".format(video_reference_uuid),
-                level=1,
-            )
-            utils.log(e, level=1)
+        Returns:
+            Organism part names.
+        """
+        return self._oni_client().get_all_parts()
 
-    def get_video_by_video_reference_uuid(self, video_reference_uuid: str):
-        try:
-            response = self._default_session.get(
-                endpoints.VampireSquid.VIDEO_BY_VIDEO_REFERENCE_UUID
-                + "/"
-                + video_reference_uuid
-            )
-            response.raise_for_status()
+    def get_video_data(self, video_reference_uuid: str) -> Optional[Any]:
+        """Compatibility wrapper for VampireSquidClient.get_video_data.
 
-            response_parsed = response.json()
-            if isinstance(response_parsed, list):
-                return response_parsed[0]
+        Args:
+            video_reference_uuid: Video reference UUID.
 
-            return response_parsed
-        except Exception as e:
-            utils.log(
-                "Could not fetch video data for video reference {}".format(
-                    video_reference_uuid
-                ),
-                level=1,
-            )
-            utils.log(e, level=1)
+        Returns:
+            Parsed payload or None.
+        """
+        return self._vampire_squid_client().get_video_data(video_reference_uuid)
+
+    def get_video_by_video_reference_uuid(
+        self, video_reference_uuid: str
+    ) -> Optional[Any]:
+        """Compatibility wrapper for VampireSquidClient.get_video_by_video_reference_uuid.
+
+        Args:
+            video_reference_uuid: Video reference UUID.
+
+        Returns:
+            Parsed payload or None.
+        """
+        return self._vampire_squid_client().get_video_by_video_reference_uuid(
+            video_reference_uuid
+        )

@@ -7,12 +7,14 @@ import sys
 from PyQt6.QtWidgets import QApplication
 
 from vars_localize.ui.AppWindow import AppWindow
+from vars_localize.util.logging import configure_logging
 
 
 def main():
     """
     Main entry point for the VARS Localize application.
     """
+    configure_logging()
     app = QApplication(sys.argv)
 
     window = AppWindow()

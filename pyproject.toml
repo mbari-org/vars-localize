@@ -9,6 +9,7 @@ dependencies = [
     "pyqt6>=6.7.1",
     "requests>=2.32.3",
     "qdarkstyle>=3.2.3",
+    "loguru>=0.7.2",
 ]
 readme = "README.md"
 requires-python = ">= 3.10"
@@ -21,6 +22,8 @@ vars-localize = "vars_localize.__main__:main"
 dev = [
     "python-semantic-release>=9.15.1",
     "pre-commit>=4.0.1",
+    "pytest>=8.3.0",
+    "pytest-cov>=5.0.0",
 ]
 
 [project.optional-dependencies]

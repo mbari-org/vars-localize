@@ -7,7 +7,9 @@ import os
 import threading
 from typing import Any, Iterable, List, Optional, Sequence, Tuple, cast
 
-from vars_localize.util.utils import log
+from vars_localize.util.logging import get_logger
+
+logger = get_logger("SAM3Service")
 
 
 class SAM3Service:
@@ -40,8 +42,7 @@ class SAM3Service:
         self._point_features = None
         self._src_shape = None
         self._import_error = None
-
-        self.ensure_loaded()
+        self._missing_dependency_reported = False
 
     def _validate_model_path(self) -> Optional[Exception]:
         if not self._model:
@@ -94,27 +95,38 @@ class SAM3Service:
         else:
             self._import_error = self._validate_model_path()
 
-    def ensure_loaded(self) -> bool:
+    def ensure_loaded(self) -> None:
         with self._predictor_lock:
             if self.available:
-                return True
+                return
 
             validation_error = self._validate_model_path()
             if validation_error is not None:
                 self._import_error = validation_error
-                return False
+                raise RuntimeError(str(validation_error)) from validation_error
 
             try:
                 self._device = self._select_device()
                 self._build_predictors(self._device)
                 self._import_error = None
-                return True
+                return
+            except ModuleNotFoundError as exc:
+                self._import_error = exc
+                # Optional dependency: app should continue with SAM disabled.
+                if not self._missing_dependency_reported:
+                    logger.info(
+                        "Ultralytics SAM dependency is not installed; SAM assist is disabled."
+                    )
+                    self._missing_dependency_reported = True
+                raise RuntimeError(
+                    "Ultralytics SAM dependency is not installed; SAM assist is disabled."
+                ) from exc
             except (
                 Exception
             ) as exc:  # pragma: no cover - depends on optional install/runtime
                 self._import_error = exc
-                log("[SAM3] Predictor init failed: {}".format(exc), level=2)
-                return False
+                logger.exception("SAM3 predictor initialization failed: {}", exc)
+                raise RuntimeError("SAM3 predictor initialization failed.") from exc
 
     def _build_predictors(self, device: str):
         from ultralytics.models.sam import SAM3Predictor, SAM3SemanticPredictor
@@ -157,11 +169,13 @@ class SAM3Service:
 
             if bool(torch.cuda.is_available()):
                 return "0"
+            if bool(torch.backends.mps.is_available()):
+                return "mps"
+        except ModuleNotFoundError:
+            # Torch is optional in this app unless SAM extras are installed.
+            return "cpu"
         except Exception as exc:
-            log(
-                "[SAM3] torch device probe failed, defaulting to CPU: {}".format(exc),
-                level=1,
-            )
+            logger.warning("Torch device probe failed, defaulting to CPU: {}", exc)
 
         return "cpu"
 
@@ -217,11 +231,10 @@ class SAM3Service:
                 if self._device != "cpu" and (
                     "Invalid CUDA" in message or "device=" in message
                 ):
-                    log(
-                        "[SAM3] device {} failed during set_image; retrying on CPU".format(
+                    logger.warning(
+                        "Device {} failed during set_image; retrying on CPU".format(
                             self._device
-                        ),
-                        level=1,
+                        )
                     )
                     self._recreate_predictor("cpu")
                     semantic_predictor = cast(Any, self._semantic_predictor)
@@ -241,7 +254,7 @@ class SAM3Service:
             try:
                 self._prime_point_prompt_context(semantic_predictor)
             except Exception as exc:
-                log("[SAM3] neutral point context init failed: {}".format(exc), level=1)
+                logger.warning("Neutral point context init failed: {}", exc)
 
             # log(
             #     "[SAM3] set_image complete: src_shape={} feature_ready={}".format(
@@ -267,7 +280,7 @@ class SAM3Service:
                 reset_prompts()
                 changed = True
             except Exception as exc:
-                log("[SAM3] reset_prompts failed: {}".format(exc), level=1)
+                logger.warning("reset_prompts failed: {}", exc)
 
         prompts = getattr(active, "prompts", None)
         if isinstance(prompts, dict):
@@ -298,10 +311,7 @@ class SAM3Service:
                 try:
                     self._prime_point_prompt_context(predictor)
                 except Exception as exc:
-                    log(
-                        "[SAM3] neutral point context reset failed: {}".format(exc),
-                        level=1,
-                    )
+                    logger.warning("Neutral point context reset failed: {}", exc)
 
             normalized = self._normalize_mask_boxes(masks)
             if normalized:
@@ -313,13 +323,13 @@ class SAM3Service:
             if not self.available:
                 raise RuntimeError("SAM3 service is unavailable")
             if self._src_shape is None:
-                log("[SAM3] query_point skipped: src_shape not ready", level=1)
+                logger.warning("query_point skipped: src_shape not ready")
                 return []
             if self._image_rgb is None:
-                log("[SAM3] query_point skipped: image not loaded", level=1)
+                logger.warning("query_point skipped: image not loaded")
                 return []
             if self._point_features is None:
-                log("[SAM3] query_point skipped: point features not ready", level=1)
+                logger.warning("query_point skipped: point features not ready")
                 return []
 
             predictor = cast(Any, self._point_predictor)
@@ -333,7 +343,7 @@ class SAM3Service:
                     multimask_output=False,
                 )
             except Exception as exc:
-                log("[SAM3] predictor point query failed: {}".format(exc), level=2)
+                logger.exception("Point query failed: {}", exc)
                 return []
 
             normalized = self._normalize_mask_boxes(masks)

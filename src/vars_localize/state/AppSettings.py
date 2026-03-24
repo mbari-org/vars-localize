@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from PyQt6.QtCore import QSettings
 
-from vars_localize.util.endpoints import DEFAULT_M3_URL
+from vars_localize.services.M3Service import DEFAULT_M3_URL
 
 
 @dataclass(frozen=True)

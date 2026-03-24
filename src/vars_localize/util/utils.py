@@ -10,21 +10,6 @@ from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtWidgets import QApplication, QWidget
 
 
-LOG_LEVELS = {0: "INFO", 1: "WARNING", 2: "ERROR"}
-
-
-def log(message, level=0):
-    """Log a message to stdout.
-
-    Args:
-        message: Message to log.
-        level: Log level (see LOG_LEVELS).
-    """
-    if level not in LOG_LEVELS:
-        raise ValueError("Bad log level.")
-    print("[{}] {}".format(LOG_LEVELS[level], message))
-
-
 def n_split_hash(string: str, n: int, maxval: int = 255):
     """Hash a string into `n` integer values.
 

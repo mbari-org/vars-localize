@@ -30,6 +30,7 @@ from vars_localize.ui.EntryTree import (
 from vars_localize.ui.JSONTree import JSONTree
 from vars_localize.ui.Paginator import Paginator
 from vars_localize.util.qt_async import run_async
+from vars_localize.util.utils import center_window
 
 
 SEARCH_MODE_ORDER = [
@@ -491,9 +492,12 @@ class SearchPanel(QDockWidget):
 
     def _on_association_activated(self, observation_uuid: str, association_uuid: str):
         root = cast(Any, self.parent())
-        root.display_panel.image_view.focus_association_box(
-            observation_uuid, association_uuid
-        )
+        try:
+            root.display_panel.image_view.focus_association_box(
+                observation_uuid, association_uuid
+            )
+        except LookupError as exc:
+            self._show_error(str(exc))
 
     def show_popup(self, item: EntryTreeItem, col: int):
         if item is None or not item.is_observation:
@@ -506,7 +510,7 @@ class SearchPanel(QDockWidget):
         root = cast(Any, self.parent())
         admin_mode = root.admin_mode
 
-        dialog = QDialog()
+        dialog = QDialog(root)
         dialog.setMinimumSize(600, 300)
         dialog.setLayout(QVBoxLayout())
         dialog.setWindowTitle("Observation Information")
@@ -575,6 +579,7 @@ class SearchPanel(QDockWidget):
         concept_before = concept_field.text()
 
         dialog.setModal(True)
+        center_window(dialog, root)
         accepted = dialog.exec()
 
         concept_after = concept_field.text()
@@ -601,4 +606,7 @@ class SearchPanel(QDockWidget):
     def open_video(self):
         current_item = self.entry_tree.currentItem()
         if isinstance(current_item, EntryTreeItem):
-            self.entry_tree.open_video_for_item(current_item)
+            try:
+                self.entry_tree.open_video_for_item(current_item)
+            except Exception as exc:
+                self._show_error(str(exc))

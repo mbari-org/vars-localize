@@ -29,7 +29,9 @@ from vars_localize.models import ImagedMomentEntry, ObservationEntry
 from vars_localize.services import M3Service
 from vars_localize.ui.ConceptSearchbar import ConceptSearchbar
 from vars_localize.ui.theme import status_brush
-from vars_localize.util.utils import log
+from vars_localize.util.logging import get_logger
+
+logger = get_logger("EntryTree")
 
 
 class StatusRole(str, Enum):
@@ -634,46 +636,35 @@ class ImagedMomentTree(QWidget):
             )
             break
 
-    def open_video_for_item(self, item: EntryTreeItem) -> bool:
+    def open_video_for_item(self, item: EntryTreeItem) -> None:
         if item.is_imaged_moment:
             im_item = item
         elif item.is_observation:
             parent_item = item.parent()
             if parent_item is None:
-                return False
+                raise ValueError(
+                    "Could not resolve imaged moment for this observation."
+                )
             im_item = parent_item
         else:
-            return False
+            raise ValueError("Selected item does not have an associated video.")
 
         moment = im_item.imaged_moment
         video_reference_uuid = moment.video_reference_uuid
         if not video_reference_uuid:
-            QMessageBox.warning(
-                self,
-                "No video reference",
-                "No video reference found for this imaged moment",
-            )
-            return False
+            raise ValueError("No video reference found for this imaged moment.")
 
         try:
             video_data = self._m3.get_video_by_video_reference_uuid(
                 video_reference_uuid
             )
         except HTTPException:
-            QMessageBox.warning(
-                self, "Failed to fetch video", "Failed to fetch video data from M3"
-            )
-            return False
+            raise RuntimeError("Failed to fetch video data from M3.")
 
         video_references = video_data["video_references"]
         video_start_timestamp = video_data.get("start_timestamp", None)
         if not video_start_timestamp:
-            QMessageBox.warning(
-                self,
-                "No video start timestamp",
-                "No video start timestamp found for this video reference",
-            )
-            return False
+            raise ValueError("No video start timestamp found for this video reference.")
 
         try:
             video_start_datetime = datetime.strptime(
@@ -703,12 +694,7 @@ class ImagedMomentTree(QWidget):
         elif moment.elapsed_time_millis is not None:
             annotation_timedelta = timedelta(milliseconds=moment.elapsed_time_millis)
         else:
-            QMessageBox.warning(
-                self,
-                "No annotation timestamp",
-                "No annotation timestamp found for this imaged moment",
-            )
-            return False
+            raise ValueError("No annotation timestamp found for this imaged moment.")
 
         video_url = None
         for video_reference in video_references:
@@ -720,19 +706,13 @@ class ImagedMomentTree(QWidget):
                 break
 
         if not video_url:
-            QMessageBox.warning(
-                self,
-                "No valid video URL",
-                "No valid video URL found for this video reference",
-            )
-            return False
+            raise ValueError("No valid video URL found for this video reference.")
 
         annotation_seconds = annotation_timedelta.total_seconds()
         video_url_fragment = video_url + "#t={},{}".format(
             annotation_seconds, annotation_seconds + 1e-3
         )
         webbrowser.open(video_url_fragment)
-        return True
 
     def _handle_delete_shortcut(self):
         root = self.window()
@@ -876,11 +856,10 @@ def hydrate_imaged_moment_data(
     moment = ImagedMomentEntry.from_dict(raw)
 
     if moment.image_reference_uuid is None:
-        log(
+        logger.warning(
             "No valid image reference found for imaged moment {}".format(
                 imaged_moment_uuid
-            ),
-            level=1,
+            )
         )
 
     return moment

@@ -4,6 +4,7 @@ from typing import Callable, List, Optional, Any, cast
 
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRectF, QLineF, QSizeF
 from PyQt6.QtGui import (
+    QEnterEvent,
     QImage,
     QResizeEvent,
     QMouseEvent,
@@ -33,8 +34,11 @@ from vars_localize.ui.BoundingBox import (
 from vars_localize.ui.PropertiesDialog import PropertiesDialog
 from vars_localize.ui.theme import PALETTE
 from vars_localize.services import M3Service
+from vars_localize.util.logging import get_logger
 from vars_localize.util.qt_async import run_async
-from vars_localize.util.utils import center_window, log
+from vars_localize.util.utils import center_window
+
+logger = get_logger("ImageView")
 
 
 class ImageView(QGraphicsView):
@@ -72,7 +76,7 @@ class ImageView(QGraphicsView):
         self.pt_2 = None
         self.selected_box = None
         self.hovered_box = None
-        self.mouse_line_pen = QPen(QColor(PALETTE["accent"]))
+        self.mouse_line_pen = QPen(QColor(PALETTE["crosshairs"]))
         self.mouse_hline = QLineF()
         self.mouse_vline = QLineF()
 
@@ -103,6 +107,7 @@ class ImageView(QGraphicsView):
             None
         )
         self._sam_status_ui_callback: Optional[Callable[[str], None]] = None
+        self._mouse_in_view = False
 
         self._sam_min_area = self.SAM_MIN_AREA
         self._sam_overlap_iou = self.SAM_OVERLAP_IOU
@@ -225,8 +230,11 @@ class ImageView(QGraphicsView):
         candidate = self._current_sam_candidate
         if candidate is None:
             return
-        if self.handle_new_box(candidate):
+        try:
+            self.handle_new_box(candidate)
             self._drop_current_candidate()
+        except Exception as exc:
+            QMessageBox.warning(self, "Box creation failed", str(exc))
         self.redraw()
 
     def reject_sam_candidate(self):
@@ -307,7 +315,7 @@ class ImageView(QGraphicsView):
                 self._start_sam_candidates_for_observation(pending_uuid)
 
         def _on_error(err):
-            log("[SAM] embedding failed:\n{}".format(err), level=2)
+            logger.error("Embedding failed: {}", err)
             self._notify_sam_status("SAM embedding failed")
 
         def _on_finished():
@@ -374,7 +382,7 @@ class ImageView(QGraphicsView):
             self.redraw()
 
         def _on_error(err):
-            log("[SAM] concept query failed:\n{}".format(err), level=2)
+            logger.error("Concept query failed: {}", err)
             self._notify_sam_status("SAM concept query failed")
 
         run_async(
@@ -514,6 +522,10 @@ class ImageView(QGraphicsView):
             if not self._sam_assist_enabled:
                 # log("[SAM] hover result ignored: SAM assist disabled", level=1)
                 return
+            if not self._mouse_in_view:
+                self._sam_hover_box = None
+                self.redraw()
+                return
 
             self._sam_hover_box = None
             boxes = self._filter_point_prompt_boxes(boxes)
@@ -625,7 +637,7 @@ class ImageView(QGraphicsView):
                     QPen(QColor(PALETTE["success"]), 2, Qt.PenStyle.DashLine),
                 )
 
-            if self._sam_hover_box is not None:
+            if self._mouse_in_view and self._sam_hover_box is not None:
                 hover_top_left = self.get_scene_rel_point(
                     QPointF(self._sam_hover_box.x(), self._sam_hover_box.y())
                 )
@@ -640,10 +652,13 @@ class ImageView(QGraphicsView):
                     QPen(QColor(PALETTE["warning"]), 2, Qt.PenStyle.DashLine),
                 )
 
-            # Draw crosshairs
-            self.scene().addLine(self.mouse_hline, self.mouse_line_pen)
-            self.scene().addLine(self.mouse_vline, self.mouse_line_pen)
-            self.setCursor(Qt.CursorShape.BlankCursor)
+            if self._mouse_in_view:
+                # Draw crosshairs only while cursor is inside the view.
+                self.scene().addLine(self.mouse_hline, self.mouse_line_pen)
+                self.scene().addLine(self.mouse_vline, self.mouse_line_pen)
+                self.setCursor(Qt.CursorShape.BlankCursor)
+            else:
+                self.setCursor(Qt.CursorShape.ArrowCursor)
 
             drag_rect = self.calc_drag_rect()
             if drag_rect:  # Drag rectangle should be drawn
@@ -858,13 +873,15 @@ class ImageView(QGraphicsView):
 
     def focus_association_box(
         self, observation_uuid: str, association_uuid: str
-    ) -> bool:
+    ) -> None:
         if not self.observation_map:
-            return False
+            raise LookupError("No observations are loaded for the current image.")
 
         observation_entry = self.observation_map.get(observation_uuid)
         if observation_entry is None:
-            return False
+            raise LookupError(
+                "Could not find the selected observation in the current image."
+            )
 
         self.select_observation(observation_uuid)
         observation = observation_entry.observation
@@ -875,9 +892,9 @@ class ImageView(QGraphicsView):
                 self.selected_box = box
                 self.hovered_box = None
                 self.redraw()
-                return True
+                return
 
-        return False
+        raise LookupError("Could not find the selected association box.")
 
     def refit(self):
         """Refit the scene rectangle to match the current view size."""
@@ -1196,56 +1213,41 @@ class ImageView(QGraphicsView):
             self.moment.imaged_moment.cached_image = image
         self.load_moment(self.moment)  # Reload imaged moment
 
-    def handle_new_box(self, box: SourceBoundingBox) -> bool:
+    def handle_new_box(self, box: SourceBoundingBox) -> None:
         """Create a new box, creating an observation if needed.
 
         Args:
             box: Source bounding box.
-
-        Returns:
-            bool: True on success, False on failure.
         """
         uuid = self.observation_uuid
         if not uuid:  # Imaged moment selected
             new_concept = self.prompt_concept()
             if not new_concept:  # No concept was specified
-                return False
+                raise ValueError("Concept is required to create a new observation.")
             observation = self.make_new_observation(new_concept)
             if not observation or "observation_uuid" not in observation:
-                QMessageBox.warning(
-                    self,
-                    "Observation creation failed",
-                    "Could not create an observation for the selected concept.",
+                raise RuntimeError(
+                    "Could not create an observation for the selected concept."
                 )
-                return False
             box.set_label(new_concept)
             uuid = observation["observation_uuid"]
 
         if not self.observation_map or uuid not in self.observation_map:
-            QMessageBox.warning(
-                self,
-                "Box creation failed",
-                "Could not resolve the target observation for this box.",
-            )
-            return False
+            raise RuntimeError("Could not resolve the target observation for this box.")
 
         box.observation_uuid = uuid
         observation = self.observation_map[uuid].observation
 
         response_json = self._m3_create_box(box.get_json(), uuid, to_concept=box.part)
         if not response_json or "uuid" not in response_json:
-            QMessageBox.warning(
-                self,
-                "Box creation failed",
-                "Server rejected this box. Please try again or adjust box bounds.",
+            raise RuntimeError(
+                "Server rejected this box. Please try again or adjust box bounds."
             )
-            return False
 
         box.association_uuid = response_json["uuid"]
         self.draw_bounding_box(box, observation.box_manager)
         observation.boxes.append(box)
         update_imaged_moment_entry(self.moment)  # Update tree
-        return True
 
     def reset_mouse(self):
         self.pt_1 = None
@@ -1281,7 +1283,10 @@ class ImageView(QGraphicsView):
                     box_json, concept, observer, part="self"
                 )
                 if new_src_box.width() * new_src_box.height() > 100:
-                    self.handle_new_box(new_src_box)
+                    try:
+                        self.handle_new_box(new_src_box)
+                    except Exception as exc:
+                        QMessageBox.warning(self, "Box creation failed", str(exc))
 
             if self.resize_type:
                 self._m3_modify_box(
@@ -1299,8 +1304,11 @@ class ImageView(QGraphicsView):
             and self._sam_assist_enabled
             and self._sam_hover_box is not None
         ):
-            if self.handle_new_box(self._sam_hover_box):
+            try:
+                self.handle_new_box(self._sam_hover_box)
                 self._sam_hover_box = None
+            except Exception as exc:
+                QMessageBox.warning(self, "Box creation failed", str(exc))
             self.redraw()
             event.accept()
             return
@@ -1333,6 +1341,7 @@ class ImageView(QGraphicsView):
                 self.resize_offset = self.hov_pt_1 - corner
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        self._mouse_in_view = True
         if self.pixmap_src:
             self.pt_2 = self.get_im_rel_point(event.pos())
             if self.hovered_box:
@@ -1398,6 +1407,18 @@ class ImageView(QGraphicsView):
         self._maybe_update_hover_candidate(event)
 
         self.redraw()
+
+    def enterEvent(self, event: QEnterEvent) -> None:
+        self._mouse_in_view = True
+        self.redraw()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        self._mouse_in_view = False
+        self._sam_hover_box = None
+        self._sam_last_hover_point = None
+        self.redraw()
+        super().leaveEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         if self.pixmap_src:

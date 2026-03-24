@@ -1,6 +1,6 @@
 from PyQt6 import QtWidgets
 
-from vars_localize.util.endpoints import DEFAULT_M3_URL
+from vars_localize.services.M3Service import DEFAULT_M3_URL
 
 
 class LoginDialog(QtWidgets.QDialog):
@@ -59,6 +59,11 @@ class LoginDialog(QtWidgets.QDialog):
             default_m3_url=default_m3_url,
         )
 
+        self._error_label = QtWidgets.QLabel("")
+        self._error_label.setObjectName("loginErrorLabel")
+        self._error_label.setWordWrap(True)
+        self._error_label.hide()
+
         self._dialog_buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.StandardButton.Ok
             | QtWidgets.QDialogButtonBox.StandardButton.Cancel
@@ -79,6 +84,7 @@ class LoginDialog(QtWidgets.QDialog):
         layout = QtWidgets.QVBoxLayout()
 
         layout.addWidget(self._login_form)
+        layout.addWidget(self._error_label)
         layout.addWidget(self._dialog_buttons)
 
         self.setLayout(layout)
@@ -86,3 +92,13 @@ class LoginDialog(QtWidgets.QDialog):
     @property
     def credentials(self):
         return self._login_form.credentials
+
+    def set_error(self, message: str) -> None:
+        """Show an inline login error message in the dialog."""
+        self._error_label.setText(message)
+        self._error_label.show()
+
+    def clear_error(self) -> None:
+        """Hide any inline login error message."""
+        self._error_label.clear()
+        self._error_label.hide()

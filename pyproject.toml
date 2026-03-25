@@ -32,7 +32,6 @@ dev = [
 [project.optional-dependencies]
 sam = [
     "ultralytics>=8.4.26",
-    "CLIP @ git+https://github.com/ultralytics/CLIP.git",
     "timm"
 ]
 

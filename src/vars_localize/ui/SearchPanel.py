@@ -184,6 +184,9 @@ class SearchPanel(QDockWidget):
             lambda current, _: self._sync_video_button_state(current)
         )
         self.entry_tree.associationActivated.connect(self._on_association_activated)
+        self.entry_tree.annotationFocusChanged.connect(
+            self._on_annotation_focus_changed
+        )
         self.entry_tree.itemDoubleClicked.connect(self.show_popup)
 
         self.paginator = Paginator()
@@ -535,6 +538,15 @@ class SearchPanel(QDockWidget):
             )
         except LookupError as exc:
             self._show_error(str(exc))
+
+    def _on_annotation_focus_changed(
+        self, concept_filter: Optional[str], observation_uuid: Optional[str]
+    ):
+        root = cast(Any, self.parent())
+        root.display_panel.image_view.set_annotation_focus(
+            concept_filter=concept_filter,
+            observation_uuid=observation_uuid,
+        )
 
     def show_popup(self, item: EntryTreeItem, col: int):
         if item is None or not item.is_observation:

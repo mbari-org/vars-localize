@@ -12,12 +12,15 @@ from PyQt6.QtGui import QAction, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
     QMenu,
     QMessageBox,
+    QPushButton,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -113,6 +116,7 @@ class ImagedMomentTree(QWidget):
     currentItemChanged = pyqtSignal(object, object)
     itemDoubleClicked = pyqtSignal(object, int)
     associationActivated = pyqtSignal(str, str)
+    annotationFocusChanged = pyqtSignal(object, object)
 
     def __init__(self, m3_service: M3Service, parent=None):
         super(ImagedMomentTree, self).__init__(parent)
@@ -127,11 +131,50 @@ class ImagedMomentTree(QWidget):
         self._current_item: Optional[EntryTreeItem] = None
         self._selected_moment: Optional[EntryTreeItem] = None
         self._selected_observation: Optional[EntryTreeItem] = None
+        self._active_concept_filter: Optional[str] = None
+        self._observation_rows: List[EntryTreeItem] = []
 
         self.setLayout(QVBoxLayout())
         layout = cast(QVBoxLayout, self.layout())
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
+
+        self.annotation_controls = QWidget()
+        controls_layout = QHBoxLayout()
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(6)
+        self.annotation_controls.setLayout(controls_layout)
+
+        self.concept_filter_combo = QComboBox()
+        self.concept_filter_combo.setMinimumWidth(220)
+        self.concept_filter_combo.setToolTip(
+            "Filter observations by concept for annotation focus"
+        )
+        self.concept_filter_combo.currentIndexChanged.connect(
+            self._on_concept_filter_changed
+        )
+
+        self.clear_concept_button = QPushButton("Clear Concept")
+        self.clear_concept_button.setToolTip(
+            "Show all concepts and clear concept-based annotation focus"
+        )
+        self.clear_concept_button.clicked.connect(self.clear_concept_filter)
+
+        self.clear_observation_button = QPushButton("Clear Observation")
+        self.clear_observation_button.setToolTip(
+            "Deselect the current observation and hide associations"
+        )
+        self.clear_observation_button.clicked.connect(self.clear_observation_selection)
+
+        controls_layout.addWidget(QLabel("Annotate Concept"))
+        controls_layout.addWidget(self.concept_filter_combo)
+        controls_layout.addWidget(self.clear_concept_button)
+        controls_layout.addWidget(self.clear_observation_button)
+        controls_layout.addStretch(1)
+
+        self._populate_concept_filter_options([])
+        self.clear_concept_button.setEnabled(False)
+        self.clear_observation_button.setEnabled(False)
 
         self.moments_table = self._build_table(
             ["#", "Observations", "Status"],
@@ -177,6 +220,7 @@ class ImagedMomentTree(QWidget):
         self.stacked_splitter.addWidget(self.moments_table)
         self.stacked_splitter.addWidget(self.observations_table)
         self.stacked_splitter.addWidget(self.associations_table)
+        layout.addWidget(self.annotation_controls)
         layout.addWidget(self.stacked_splitter, 1)
 
         self._restore_splitter_sizes()
@@ -355,10 +399,15 @@ class ImagedMomentTree(QWidget):
         self._moment_items = []
         self._selected_moment = None
         self._selected_observation = None
+        self._observation_rows = []
+        self._active_concept_filter = None
         self._set_current_item(None)
         self.moments_table.setRowCount(0)
         self.observations_table.setRowCount(0)
         self.associations_table.setRowCount(0)
+        self._populate_concept_filter_options([])
+        self.clear_concept_button.setEnabled(False)
+        self.clear_observation_button.setEnabled(False)
 
     def _set_current_item(self, item: Optional[EntryTreeItem]):
         previous = self._current_item
@@ -459,9 +508,12 @@ class ImagedMomentTree(QWidget):
     def _select_moment_item(self, moment_item: EntryTreeItem):
         self._selected_moment = moment_item
         self._selected_observation = None
+        self._refresh_concept_filter_options(moment_item)
         self._populate_observations(moment_item)
         self.associations_table.setRowCount(0)
         self._set_current_item(moment_item)
+        self.clear_observation_button.setEnabled(False)
+        self._emit_annotation_focus_changed()
 
         for row in range(self.moments_table.rowCount()):
             row_payload = self._row_payload(self.moments_table, row)
@@ -471,10 +523,22 @@ class ImagedMomentTree(QWidget):
 
     def _populate_observations(self, moment_item: EntryTreeItem):
         self.observations_table.setRowCount(0)
+        self._observation_rows = []
 
-        for row, obs_item in enumerate(moment_item._children):
+        visible_observations = [
+            child
+            for child in moment_item._children
+            if child.is_observation
+            and (
+                self._active_concept_filter is None
+                or child.observation.concept == self._active_concept_filter
+            )
+        ]
+
+        for row, obs_item in enumerate(visible_observations):
             obs = obs_item.observation
             self.observations_table.insertRow(row)
+            self._observation_rows.append(obs_item)
 
             self.observations_table.setItem(row, 0, QTableWidgetItem(str(row + 1)))
             self._set_row_payload(self.observations_table, row, obs_item)
@@ -548,15 +612,99 @@ class ImagedMomentTree(QWidget):
     def _on_observation_selection_changed(self):
         row = self.observations_table.currentRow()
         if row < 0:
+            self._selected_observation = None
+            self.associations_table.setRowCount(0)
+            if self._selected_moment is not None:
+                self._set_current_item(self._selected_moment)
+            self.clear_observation_button.setEnabled(False)
+            self._emit_annotation_focus_changed()
             return
 
-        payload = self._row_payload(self.observations_table, row)
-        if not isinstance(payload, EntryTreeItem):
+        if row >= len(self._observation_rows):
             return
 
+        payload = self._observation_rows[row]
         self._selected_observation = payload
         self._populate_associations(payload)
         self._set_current_item(payload)
+        self.clear_observation_button.setEnabled(True)
+        self._emit_annotation_focus_changed()
+
+    def _populate_concept_filter_options(self, concepts: List[str]):
+        old_data = self.concept_filter_combo.currentData()
+        self.concept_filter_combo.blockSignals(True)
+        self.concept_filter_combo.clear()
+        self.concept_filter_combo.addItem("All concepts", None)
+        for concept in sorted(set(concepts)):
+            self.concept_filter_combo.addItem(concept, concept)
+        idx = self.concept_filter_combo.findData(old_data)
+        if idx < 0:
+            idx = 0
+        self.concept_filter_combo.setCurrentIndex(idx)
+        self.concept_filter_combo.blockSignals(False)
+
+    def _refresh_concept_filter_options(self, moment_item: EntryTreeItem):
+        concepts = [
+            child.observation.concept
+            for child in moment_item._children
+            if child.is_observation
+        ]
+        previous_filter = self._active_concept_filter
+        self._populate_concept_filter_options(concepts)
+        if previous_filter is not None and previous_filter in set(concepts):
+            self._active_concept_filter = previous_filter
+            idx = self.concept_filter_combo.findData(previous_filter)
+            if idx >= 0:
+                self.concept_filter_combo.setCurrentIndex(idx)
+        else:
+            self._active_concept_filter = None
+            self.concept_filter_combo.setCurrentIndex(0)
+        self.clear_concept_button.setEnabled(self._active_concept_filter is not None)
+
+    def _on_concept_filter_changed(self, _index: int):
+        data = self.concept_filter_combo.currentData()
+        self._active_concept_filter = str(data) if isinstance(data, str) else None
+        self.clear_concept_button.setEnabled(self._active_concept_filter is not None)
+
+        if self._selected_moment is None:
+            return
+
+        selected_uuid = (
+            self._selected_observation.observation.uuid
+            if self._selected_observation is not None
+            else None
+        )
+        self._populate_observations(self._selected_moment)
+
+        if selected_uuid is not None:
+            for row, obs_item in enumerate(self._observation_rows):
+                if obs_item.observation.uuid == selected_uuid:
+                    self.observations_table.selectRow(row)
+                    return
+
+        self.clear_observation_selection()
+
+    def clear_concept_filter(self):
+        if self.concept_filter_combo.currentIndex() == 0:
+            return
+        self.concept_filter_combo.setCurrentIndex(0)
+
+    def clear_observation_selection(self):
+        if self.observations_table.selectionModel() is not None:
+            self.observations_table.clearSelection()
+        self.observations_table.setCurrentCell(-1, -1)
+        self._selected_observation = None
+        self.associations_table.setRowCount(0)
+        self.clear_observation_button.setEnabled(False)
+        if self._selected_moment is not None:
+            self._set_current_item(self._selected_moment)
+        self._emit_annotation_focus_changed()
+
+    def _emit_annotation_focus_changed(self):
+        observation_uuid = None
+        if self._selected_observation is not None:
+            observation_uuid = self._selected_observation.observation.uuid
+        self.annotationFocusChanged.emit(self._active_concept_filter, observation_uuid)
 
     def _on_association_selection_changed(self):
         row = self.associations_table.currentRow()
@@ -625,9 +773,15 @@ class ImagedMomentTree(QWidget):
 
         self._refresh_moment_row(entry)
         if self._selected_moment is entry:
+            self._refresh_concept_filter_options(entry)
             self._populate_observations(entry)
             if self._selected_observation is not None:
                 self._populate_associations(self._selected_observation)
+                self.clear_observation_button.setEnabled(True)
+            else:
+                self.associations_table.setRowCount(0)
+                self.clear_observation_button.setEnabled(False)
+            self._emit_annotation_focus_changed()
 
     def load_imaged_moment_entry_async(
         self,

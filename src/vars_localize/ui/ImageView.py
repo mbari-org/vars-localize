@@ -1,5 +1,7 @@
 """Custom QGraphicsView widget for controlling image/localization graphics and input."""
 
+from __future__ import annotations
+
 from typing import Callable, List, Optional, Any, cast
 
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRectF, QLineF, QSizeF
@@ -24,7 +26,7 @@ from PyQt6.QtWidgets import (
 )
 
 from vars_localize.ui.ConceptSearchbar import ConceptSearchbar
-from vars_localize.ui.EntryTree import EntryTreeItem, update_imaged_moment_entry
+from vars_localize.ui.EntryTree import EntryTreeItem
 from vars_localize.models import ImagedMomentEntry
 from vars_localize.ui.BoundingBox import (
     BoundingBoxManager,
@@ -103,7 +105,8 @@ class ImageView(QGraphicsView):
         self._sam_candidate_boxes: List[SourceBoundingBox] = []
         self._sam_candidate_index = 0
         self._sam_candidate_observation_uuid = None
-        self._sam_pending_observation_uuid = None
+        self._sam_candidate_concept: Optional[str] = None
+        self._sam_pending_concept: Optional[str] = None
         self._sam_hover_box: Optional[SourceBoundingBox] = None
         self._sam_hover_inflight = False
         self._sam_last_hover_point = None
@@ -116,6 +119,7 @@ class ImageView(QGraphicsView):
         self._sam_min_area = self.SAM_MIN_AREA
         self._sam_overlap_iou = self.SAM_OVERLAP_IOU
         self._video_data_request_uuid = None
+        self._active_annotation_concept: Optional[str] = None
 
     def configure_sam_params(self, min_area: int, overlap_iou: float):
         self._sam_min_area = max(1, int(min_area))
@@ -142,10 +146,33 @@ class ImageView(QGraphicsView):
     def _m3_delete_box(self, *args, **kwargs):
         return self._require_m3_service().delete_box(*args, **kwargs)
 
+    def _m3_delete_observation(self, *args, **kwargs):
+        return self._require_m3_service().delete_observation(*args, **kwargs)
+
     def _require_m3_service(self) -> M3Service:
         if self.m3_service is None:
             raise RuntimeError("ImageView requires an injected M3Service instance")
         return self.m3_service
+
+    def _count_bounding_box_associations(self, observation) -> int:
+        associations = getattr(observation, "associations", []) or []
+        assoc_boxes = sum(
+            1
+            for assoc in associations
+            if getattr(assoc, "link_name", "") == "bounding box"
+        )
+        hydrated_boxes = len(getattr(observation, "boxes", []) or []) + len(
+            getattr(observation, "video_boxes", []) or []
+        )
+        return max(assoc_boxes, hydrated_boxes)
+
+    def _is_observation_owned(self, observation_uuid: str) -> bool:
+        tree = self.moment.treeWidget() if self.moment is not None else None
+        if tree is not None and observation_uuid in tree.editable_uuids:
+            return True
+
+        root = cast(Any, self.window())
+        return bool(getattr(root, "admin_mode", False))
 
     def set_sam_candidate_ui_callback(self, callback: Callable[[bool, int, int], None]):
         self._sam_candidate_ui_callback = callback
@@ -155,6 +182,56 @@ class ImageView(QGraphicsView):
         self, callback: Callable[[EntryTreeItem], None]
     ):
         self._observation_select_callback = callback
+
+    def set_annotation_focus(
+        self,
+        concept_filter: Optional[str] = None,
+        observation_uuid: Optional[str] = None,
+    ):
+        previous_concept = self._active_annotation_concept
+        self._active_annotation_concept = (
+            str(concept_filter) if concept_filter else None
+        )
+        concept_changed = previous_concept != self._active_annotation_concept
+
+        if not self.enabled_observations or not self.observation_map:
+            return
+
+        for uuid in self.enabled_observations.keys():
+            if self._active_annotation_concept is None:
+                self.enabled_observations[uuid] = True
+            else:
+                concept = self.observation_map[uuid].observation.concept
+                self.enabled_observations[uuid] = (
+                    concept == self._active_annotation_concept
+                )
+
+        if observation_uuid and observation_uuid in self.observation_map:
+            self.observation_uuid = observation_uuid
+            self.selected_box = None
+        else:
+            self.observation_uuid = None
+            self.selected_box = None
+        self._sam_hover_box = None
+        if concept_changed:
+            self._sam_candidate_boxes = []
+            self._sam_candidate_index = 0
+            self._notify_sam_candidate_state()
+            if self._active_annotation_concept:
+                self._start_sam_candidates_for_concept(self._active_annotation_concept)
+            else:
+                self._sam_pending_concept = None
+                self._notify_sam_status(self._build_sam_status())
+        else:
+            self._notify_sam_candidate_state()
+        self.redraw()
+
+    def _box_is_highlighted(self, box: SourceBoundingBox) -> bool:
+        if self.selected_box is not None:
+            return self.selected_box == box
+        if self.observation_uuid is None:
+            return False
+        return box.observation_uuid == self.observation_uuid
 
     @staticmethod
     def _bytes_to_pixmap(image_bytes: bytes) -> Optional[QPixmap]:
@@ -288,7 +365,8 @@ class ImageView(QGraphicsView):
         self._sam_candidate_boxes = []
         self._sam_candidate_index = 0
         self._sam_candidate_observation_uuid = None
-        self._sam_pending_observation_uuid = None
+        self._sam_candidate_concept = None
+        self._sam_pending_concept = None
         self._sam_hover_box = None
         self._sam_hover_inflight = False
         self._sam_last_hover_point = None
@@ -310,8 +388,19 @@ class ImageView(QGraphicsView):
         if candidate is None:
             return
         try:
-            self.handle_new_box(candidate)
+            had_selected_observation = bool(self.observation_uuid)
+            self.handle_new_box(
+                candidate,
+                refresh=False,
+                preserve_sam_state=True,
+            )
             self._drop_current_candidate()
+            if had_selected_observation:
+                self.set_annotation_focus(
+                    concept_filter=self._active_annotation_concept,
+                    observation_uuid=None,
+                )
+            self.reload_moment(preserve_sam_state=True)
         except Exception as exc:
             QMessageBox.warning(self, "Box creation failed", str(exc))
         self.redraw()
@@ -388,10 +477,10 @@ class ImageView(QGraphicsView):
                 return
             self._sam_ready_image_uuid = embedded_uuid
             self._notify_sam_status(self._build_sam_status())
-            pending_uuid = self._sam_pending_observation_uuid
-            if pending_uuid:
-                self._sam_pending_observation_uuid = None
-                self._start_sam_candidates_for_observation(pending_uuid)
+            pending_concept = self._sam_pending_concept
+            if pending_concept:
+                self._sam_pending_concept = None
+                self._start_sam_candidates_for_concept(pending_concept)
 
         def _on_error(err):
             logger.error("Embedding failed: {}", err)
@@ -416,27 +505,26 @@ class ImageView(QGraphicsView):
             on_finished=_on_finished,
         )
 
-    def _start_sam_candidates_for_observation(self, observation_uuid: str):
+    def _start_sam_candidates_for_concept(self, concept: str):
         if not self._sam_assist_enabled:
             self._notify_sam_status(self._build_sam_status())
             return
-        if not self.observation_map or observation_uuid not in self.observation_map:
+        if self.moment is None:
             self._notify_sam_status(self._build_sam_status())
             return
-        if self.moment is None:
+        if not concept:
             self._notify_sam_status(self._build_sam_status())
             return
 
         moment_uuid = self.moment.imaged_moment.uuid
         if self._sam_ready_image_uuid != moment_uuid:
             self._notify_sam_status("SAM waiting for embedding to query concept...")
-            self._sam_pending_observation_uuid = observation_uuid
+            self._sam_pending_concept = concept
             self._maybe_start_sam_embedding()
             return
 
-        observation = self.observation_map[observation_uuid].observation
-        concept = observation.concept
-        self._sam_candidate_observation_uuid = observation_uuid
+        self._sam_candidate_observation_uuid = None
+        self._sam_candidate_concept = concept
         self._notify_sam_status("SAM querying concept '{}'...".format(concept))
 
         def _on_result(boxes):
@@ -445,10 +533,10 @@ class ImageView(QGraphicsView):
             current_uuid = self.moment.imaged_moment.uuid
             if current_uuid != moment_uuid:
                 return
-            if self.observation_uuid != observation_uuid:
+            if self._active_annotation_concept != concept:
                 return
 
-            candidates = self._make_candidate_boxes(boxes, observation_uuid, concept)
+            candidates = self._make_candidate_boxes(boxes, None, concept)
             self._sam_candidate_boxes = candidates
             self._sam_candidate_index = 0
             self._notify_sam_candidate_state()
@@ -614,7 +702,7 @@ class ImageView(QGraphicsView):
                 return
 
             observation_uuid = self.observation_uuid
-            concept = ""
+            concept = self._active_annotation_concept or ""
             if (
                 observation_uuid is not None
                 and self.observation_map
@@ -693,12 +781,18 @@ class ImageView(QGraphicsView):
                     video_boxes = observation.video_boxes
                     for box in boxes:
                         box_item = self.draw_bounding_box(box, box_manager)
-                        if self.selected_box == box:
+                        if self._box_is_highlighted(box):
                             box_item.set_highlighted(True)
                         if self.hovered_box == box:
                             self.draw_drag_corners(box_item)
                     for video_box in video_boxes:
-                        self.draw_bounding_box(video_box, box_manager, editable=False)
+                        video_box_item = self.draw_bounding_box(
+                            video_box,
+                            box_manager,
+                            editable=False,
+                        )
+                        if self._box_is_highlighted(video_box):
+                            video_box_item.set_highlighted(True)
 
             sam_candidate = self._current_sam_candidate
             if sam_candidate is not None:
@@ -784,22 +878,39 @@ class ImageView(QGraphicsView):
             entry.setExpanded(True)
             if entry != self.moment:
                 self.load_moment(entry)
-            self.select_observation("all")
+            self.set_annotation_focus(
+                concept_filter=self._active_annotation_concept,
+                observation_uuid=None,
+            )
         elif entry.is_observation:
             if entry.parent() != self.moment:
                 self.load_moment(entry.parent())
-            self.select_observation(entry.observation.uuid)
-            if self._sam_assist_enabled:
-                self._start_sam_candidates_for_observation(entry.observation.uuid)
+            self.set_annotation_focus(
+                concept_filter=self._active_annotation_concept,
+                observation_uuid=entry.observation.uuid,
+            )
 
-    def load_moment(self, entry: EntryTreeItem):
+    def load_moment(self, entry: EntryTreeItem, preserve_sam_state: bool = False):
         """Load data for an imaged moment entry.
 
         Args:
             entry: Entry tree item of an imaged moment.
+            preserve_sam_state: Preserve SAM embedding/candidates for same-image refreshes.
         """
+        current_uuid = (
+            self.moment.imaged_moment.uuid if self.moment is not None else None
+        )
+        next_uuid = entry.imaged_moment.uuid
+        preserve_same_image = bool(preserve_sam_state and current_uuid == next_uuid)
+
         self.moment = entry
-        self._clear_sam_state(reset_embedding=True)
+        if not preserve_same_image:
+            self._clear_sam_state(reset_embedding=True)
+        else:
+            self._sam_hover_box = None
+            self._sam_hover_inflight = False
+            self._sam_last_hover_point = None
+
         moment: ImagedMomentEntry = entry.imaged_moment
         if moment.cached_image is not None:
             self._image_loading = False
@@ -893,6 +1004,21 @@ class ImageView(QGraphicsView):
             )
             self.enabled_observations[uuid] = True
 
+        selected_observation_uuid = None
+        if self.observation_uuid and self.observation_uuid in self.observation_map:
+            selected_observation_uuid = self.observation_uuid
+        self.set_annotation_focus(
+            concept_filter=self._active_annotation_concept,
+            observation_uuid=selected_observation_uuid,
+        )
+
+        if (
+            self._sam_assist_enabled
+            and self._active_annotation_concept
+            and not preserve_same_image
+        ):
+            self._start_sam_candidates_for_concept(self._active_annotation_concept)
+
         self._ensure_video_data_loaded(moment)
 
     def draw_drag_corners(self, box: GraphicsBoundingBox):
@@ -938,18 +1064,17 @@ class ImageView(QGraphicsView):
         self.pt_2 = None
 
     def select_observation(self, observation_uuid: str):
-        """Select and display boxes for a specific observation.
+        """Set the active observation used for highlight/edit focus.
 
         Args:
-            observation_uuid: Observation UUID to display, or "all".
+            observation_uuid: Observation UUID to focus, or "all"/None to clear focus.
         """
-        for uuid in self.enabled_observations.keys():
-            self.enabled_observations[uuid] = (
-                True
-                if (observation_uuid == uuid or observation_uuid == "all")
-                else False
-            )
-        self.observation_uuid = observation_uuid if observation_uuid != "all" else None
+        if observation_uuid and observation_uuid != "all":
+            self.observation_uuid = observation_uuid
+            self.selected_box = None
+        else:
+            self.observation_uuid = None
+            self.selected_box = None
         if self.observation_uuid is None:
             self._sam_candidate_boxes = []
             self._sam_hover_box = None
@@ -1141,7 +1266,8 @@ class ImageView(QGraphicsView):
                     "Update failed",
                     "Could not update bounding box.\n\n{}".format(exc),
                 )
-            update_imaged_moment_entry(self.moment)  # Update tree
+            else:
+                self.reload_moment()
 
         self.pt_1 = None
         self.pt_2 = None
@@ -1155,19 +1281,54 @@ class ImageView(QGraphicsView):
         Args:
             box: Source bounding box to delete.
         """
+        if not self.observation_map or box.observation_uuid not in self.observation_map:
+            raise RuntimeError("Could not resolve the target observation for this box.")
+
         observation = self.observation_map[box.observation_uuid].observation
-        source_boxes = observation.boxes
-        if box in source_boxes:
-            source_boxes.remove(box)
-            try:
-                self._m3_delete_box(box.association_uuid)  # Call deletion request
-            except ServiceError as exc:
-                QMessageBox.warning(
-                    self,
-                    "Delete failed",
-                    "Could not delete bounding box.\n\n{}".format(exc),
-                )
-            update_imaged_moment_entry(self.moment)  # Update tree
+        is_last_box = self._count_bounding_box_associations(observation) <= 1
+
+        try:
+            self._m3_delete_box(box.association_uuid)  # Call deletion request
+        except ServiceError as exc:
+            QMessageBox.warning(
+                self,
+                "Delete failed",
+                "Could not delete bounding box.\n\n{}".format(exc),
+            )
+            return
+
+        if box in observation.boxes:
+            observation.boxes.remove(box)
+        if box in observation.video_boxes:
+            observation.video_boxes.remove(box)
+        if getattr(observation, "associations", None):
+            observation.associations = [
+                assoc
+                for assoc in observation.associations
+                if getattr(assoc, "uuid", "") != box.association_uuid
+            ]
+
+        if is_last_box and self._is_observation_owned(observation.uuid):
+            choice = QMessageBox.question(
+                self,
+                "Delete Observation?",
+                "This was the last bounding box for this observation. Delete the observation as well?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if choice == QMessageBox.StandardButton.Yes:
+                try:
+                    self._m3_delete_observation(observation.uuid)
+                except ServiceError as exc:
+                    QMessageBox.warning(
+                        self,
+                        "Delete failed",
+                        "The bounding box was deleted, but deleting the observation failed.\n\n{}".format(
+                            exc
+                        ),
+                    )
+
+        self.reload_moment()
 
     def calc_drag_rect(self):
         """Compute the drag-selection rectangle.
@@ -1309,7 +1470,7 @@ class ImageView(QGraphicsView):
         self.moment.treeWidget().editable_uuids.add(observation["observation_uuid"])
         return observation
 
-    def reload_moment(self):
+    def reload_moment(self, preserve_sam_state: bool = False):
         """Fully reload the current imaged moment entry."""
         image = self.moment.imaged_moment.cached_image
 
@@ -1317,7 +1478,10 @@ class ImageView(QGraphicsView):
             if image is not None and self.moment is not None:
                 self.moment.imaged_moment.cached_image = image
             if self.moment is not None:
-                self.load_moment(self.moment)  # Reload imaged moment
+                self.load_moment(
+                    self.moment,
+                    preserve_sam_state=preserve_sam_state,
+                )  # Reload imaged moment
 
         self.moment.treeWidget().load_imaged_moment_entry_async(
             self.moment,
@@ -1329,7 +1493,12 @@ class ImageView(QGraphicsView):
             on_finished=_on_done,
         )
 
-    def handle_new_box(self, box: SourceBoundingBox) -> None:
+    def handle_new_box(
+        self,
+        box: SourceBoundingBox,
+        refresh: bool = True,
+        preserve_sam_state: bool = False,
+    ) -> None:
         """Create a new box, creating an observation if needed.
 
         Args:
@@ -1338,7 +1507,7 @@ class ImageView(QGraphicsView):
         uuid = self.observation_uuid
         created_new_observation = False
         if not uuid:  # Imaged moment selected
-            new_concept = self.prompt_concept()
+            new_concept = self._active_annotation_concept or self.prompt_concept()
             if not new_concept:  # No concept was specified
                 raise ValueError("Concept is required to create a new observation.")
             observation = self.make_new_observation(new_concept)
@@ -1358,6 +1527,15 @@ class ImageView(QGraphicsView):
         elif not created_new_observation:
             raise RuntimeError("Could not resolve the target observation for this box.")
 
+        if (
+            observation is not None
+            and self._count_bounding_box_associations(observation) > 0
+        ):
+            raise ValueError(
+                "This observation already has a bounding box association. "
+                "Delete or update the existing box instead of creating another."
+            )
+
         response_json = self._m3_create_box(box.get_json(), uuid, to_concept=box.part)
         if not response_json or "uuid" not in response_json:
             raise RuntimeError(
@@ -1365,13 +1543,8 @@ class ImageView(QGraphicsView):
             )
 
         box.association_uuid = response_json["uuid"]
-        if observation is not None:
-            self.draw_bounding_box(box, observation.box_manager)
-            observation.boxes.append(box)
-            update_imaged_moment_entry(self.moment)  # Update tree
-        else:
-            # For newly-created observations, refresh once to hydrate new row and box.
-            self.reload_moment()
+        if refresh:
+            self.reload_moment(preserve_sam_state=preserve_sam_state)
 
     def reset_mouse(self):
         self.pt_1 = None
@@ -1426,6 +1599,8 @@ class ImageView(QGraphicsView):
                         "Resize failed",
                         "Could not persist box resize.\n\n{}".format(exc),
                     )
+                else:
+                    self.reload_moment()
 
             self.reset_mouse()
 
@@ -1436,7 +1611,10 @@ class ImageView(QGraphicsView):
             and self._sam_hover_box is not None
         ):
             try:
-                self.handle_new_box(self._sam_hover_box)
+                self.handle_new_box(
+                    self._sam_hover_box,
+                    preserve_sam_state=True,
+                )
                 self._sam_hover_box = None
             except Exception as exc:
                 QMessageBox.warning(self, "Box creation failed", str(exc))

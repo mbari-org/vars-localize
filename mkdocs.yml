@@ -1,0 +1,84 @@
+site_name: VARS Localize
+repo_name: mbari-org/vars-localize
+repo_url: https://github.com/mbari-org/vars-localize
+site_description: Desktop tool for creating and editing localizations in the VARS database
+site_author: Kevin Barnard
+
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.indexes
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - toc.integrate
+    - content.code.copy
+  icon:
+    repo: material/github
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/theme-light-dark
+        name: Switch theme
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue grey
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - getting-started/installation.md
+    - getting-started/quickstart.md
+  - User Guide:
+    - user-guide/ui-overview.md
+    - Login Dialog: user-guide/ui/login-dialog.md
+    - Search Panel: user-guide/ui/search-panel.md
+    - Entry Browser: user-guide/ui/entry-browser.md
+    - Image Canvas: user-guide/ui/image-canvas.md
+    - Settings Dialog: user-guide/ui/settings-dialog.md
+    - Localization Workflow: user-guide/workflows/localization-workflow.md
+    - SAM3 Assist: user-guide/sam3/sam3-assist.md
+  - Reference:
+    - reference/shortcuts.md
+    - reference/troubleshooting.md
+  - Developer:
+    - developer/architecture.md
+    # - developer/screenshot-capture.md
+    - Screenshot Assets: images/screenshots/README.md
+
+markdown_extensions:
+  - meta
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - footnotes
+  - attr_list
+  - md_in_html
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - toc:
+      permalink: true

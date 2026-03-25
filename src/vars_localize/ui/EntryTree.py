@@ -177,7 +177,7 @@ class ImagedMomentTree(QWidget):
         self.clear_observation_button.setEnabled(False)
 
         self.moments_table = self._build_table(
-            ["#", "Observations", "Status"],
+            ["#", "Observations", "Recorded", "Video Sequence", "Status"],
             QAbstractItemView.SelectionMode.SingleSelection,
         )
         self.observations_table = self._build_table(
@@ -185,7 +185,7 @@ class ImagedMomentTree(QWidget):
             QAbstractItemView.SelectionMode.ExtendedSelection,
         )
         self.associations_table = self._build_table(
-            ["#", "Type", "Target", "Summary"],
+            ["#", "Name", "To Concept", "Value"],
             QAbstractItemView.SelectionMode.SingleSelection,
         )
 
@@ -195,15 +195,17 @@ class ImagedMomentTree(QWidget):
                 QHeaderView.ResizeMode.ResizeToContents,
                 QHeaderView.ResizeMode.ResizeToContents,
                 QHeaderView.ResizeMode.Stretch,
+                QHeaderView.ResizeMode.ResizeToContents,
+                QHeaderView.ResizeMode.ResizeToContents,
             ],
         )
         self._set_resize_modes(
             self.observations_table,
             [
                 QHeaderView.ResizeMode.ResizeToContents,
-                QHeaderView.ResizeMode.ResizeToContents,
-                QHeaderView.ResizeMode.ResizeToContents,
                 QHeaderView.ResizeMode.Stretch,
+                QHeaderView.ResizeMode.ResizeToContents,
+                QHeaderView.ResizeMode.ResizeToContents,
             ],
         )
         self._set_resize_modes(
@@ -368,6 +370,31 @@ class ImagedMomentTree(QWidget):
             StatusRole.LOCALIZED,
         )
 
+    @staticmethod
+    def _format_recorded_timestamp(recorded_timestamp: Optional[str]) -> str:
+        if not recorded_timestamp:
+            return "-"
+
+        for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
+            try:
+                dt = datetime.strptime(recorded_timestamp, fmt)
+                return dt.strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                continue
+        return recorded_timestamp.replace("T", " ").replace("Z", "")
+
+    @staticmethod
+    def _extract_video_sequence_name(moment: ImagedMomentEntry) -> str:
+        if isinstance(moment.video_sequence_name, str) and moment.video_sequence_name:
+            return moment.video_sequence_name
+
+        if isinstance(moment.raw, dict):
+            value = moment.raw.get("video_sequence_name")
+            if isinstance(value, str) and value:
+                return value
+
+        return "-"
+
     def _observation_status(self, obs: ObservationEntry) -> tuple[str, str, StatusRole]:
         box_count = len(obs.boxes)
         if box_count <= 0:
@@ -394,19 +421,24 @@ class ImagedMomentTree(QWidget):
         item.setText(text)
         item.setToolTip(tooltip)
         item.setForeground(status_brush(role.value))
+        item.setTextAlignment(
+            int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        )
 
-    def clear(self):
+    def clear(self, reset_concept_filter: bool = True):
         self._moment_items = []
         self._selected_moment = None
         self._selected_observation = None
         self._observation_rows = []
-        self._active_concept_filter = None
+        if reset_concept_filter:
+            self._active_concept_filter = None
         self._set_current_item(None)
         self.moments_table.setRowCount(0)
         self.observations_table.setRowCount(0)
         self.associations_table.setRowCount(0)
-        self._populate_concept_filter_options([])
-        self.clear_concept_button.setEnabled(False)
+        if reset_concept_filter:
+            self._populate_concept_filter_options([])
+            self.clear_concept_button.setEnabled(False)
         self.clear_observation_button.setEnabled(False)
 
     def _set_current_item(self, item: Optional[EntryTreeItem]):
@@ -476,7 +508,9 @@ class ImagedMomentTree(QWidget):
             self.moments_table.selectRow(row - 1)
 
     def load_page_data(self, imaged_moment_data: List[ImagedMomentEntry]):
-        self.clear()
+        # Preserve annotate-concept focus across page flips; it will be validated
+        # against the newly selected moment in _refresh_concept_filter_options.
+        self.clear(reset_concept_filter=False)
         if not imaged_moment_data:
             return
 
@@ -497,13 +531,33 @@ class ImagedMomentTree(QWidget):
         self.moments_table.insertRow(row)
 
         self.moments_table.setItem(row, 0, QTableWidgetItem(str(row + 1)))
+        idx_item = self.moments_table.item(row, 0)
+        if idx_item is not None:
+            idx_item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
         self._set_row_payload(self.moments_table, row, moment_item)
 
         obs_count_text = "{}".format(len(metadata.observations))
         self.moments_table.setItem(row, 1, QTableWidgetItem(obs_count_text))
+        obs_count_item = self.moments_table.item(row, 1)
+        if obs_count_item is not None:
+            obs_count_item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
+
+        recorded_text = self._format_recorded_timestamp(metadata.recorded_timestamp)
+        self.moments_table.setItem(row, 2, QTableWidgetItem(recorded_text))
+        recorded_item = self.moments_table.item(row, 2)
+        if recorded_item is not None:
+            recorded_item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
+
+        video_text = self._extract_video_sequence_name(metadata)
+        self.moments_table.setItem(row, 3, QTableWidgetItem(video_text))
+        video_item = self.moments_table.item(row, 3)
+        if video_item is not None:
+            video_item.setTextAlignment(
+                int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            )
 
         status_text, tooltip, role = self._moment_status(metadata)
-        self._set_status_cell(self.moments_table, row, 2, status_text, tooltip, role)
+        self._set_status_cell(self.moments_table, row, 4, status_text, tooltip, role)
 
     def _select_moment_item(self, moment_item: EntryTreeItem):
         self._selected_moment = moment_item
@@ -541,6 +595,9 @@ class ImagedMomentTree(QWidget):
             self._observation_rows.append(obs_item)
 
             self.observations_table.setItem(row, 0, QTableWidgetItem(str(row + 1)))
+            idx_item = self.observations_table.item(row, 0)
+            if idx_item is not None:
+                idx_item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
             self._set_row_payload(self.observations_table, row, obs_item)
 
             concept_item = QTableWidgetItem(obs.concept)
@@ -562,6 +619,9 @@ class ImagedMomentTree(QWidget):
         for row, assoc in enumerate(observation.associations):
             self.associations_table.insertRow(row)
             self.associations_table.setItem(row, 0, QTableWidgetItem(str(row + 1)))
+            idx_item = self.associations_table.item(row, 0)
+            if idx_item is not None:
+                idx_item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
 
             is_box = assoc.link_name == "bounding box"
             assoc_type = "Bounding Box" if is_box else assoc.link_name
@@ -830,9 +890,23 @@ class ImagedMomentTree(QWidget):
             if obs_count_cell is not None:
                 obs_count_cell.setText("{}".format(len(moment.observations)))
 
+            recorded_cell = self.moments_table.item(row, 2)
+            if recorded_cell is not None:
+                recorded_cell.setText(
+                    self._format_recorded_timestamp(moment.recorded_timestamp)
+                )
+                recorded_cell.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
+
+            video_cell = self.moments_table.item(row, 3)
+            if video_cell is not None:
+                video_cell.setText(self._extract_video_sequence_name(moment))
+                video_cell.setTextAlignment(
+                    int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                )
+
             status_text, tooltip, role = self._moment_status(moment)
             self._set_status_cell(
-                self.moments_table, row, 2, status_text, tooltip, role
+                self.moments_table, row, 4, status_text, tooltip, role
             )
             break
 
@@ -1072,5 +1146,23 @@ def hydrate_imaged_moment_data(
                 imaged_moment_uuid
             )
         )
+
+    if moment.video_reference_uuid:
+        try:
+            media = m3_service.get_media_by_video_reference_uuid(
+                moment.video_reference_uuid
+            )
+            video_sequence_name = media.get("video_sequence_name")
+            if isinstance(video_sequence_name, str) and video_sequence_name:
+                moment.video_sequence_name = video_sequence_name
+                if isinstance(moment.raw, dict):
+                    moment.raw["video_sequence_name"] = video_sequence_name
+        except Exception as exc:
+            logger.warning(
+                "Could not fetch media metadata for video reference {}: {}".format(
+                    moment.video_reference_uuid,
+                    exc,
+                )
+            )
 
     return moment

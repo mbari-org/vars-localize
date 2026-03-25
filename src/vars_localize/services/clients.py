@@ -408,6 +408,7 @@ class VampireSquidClient:
 
     VIDEO_DATA = "/videoreferences"
     VIDEO_BY_VIDEO_REFERENCE_UUID = "/videos/videoreference"
+    MEDIA_BY_VIDEO_REFERENCE_UUID = "/media/videoreference"
 
     def __init__(self, endpoint: Dict[str, Any], session: requests.Session):
         """Initialize from Raziel endpoint metadata and shared app session.
@@ -461,6 +462,26 @@ class VampireSquidClient:
         response = self._request(
             "get",
             self.VIDEO_BY_VIDEO_REFERENCE_UUID + "/" + video_reference_uuid,
+        )
+        response_parsed = response.json()
+        if isinstance(response_parsed, list):
+            return response_parsed[0] if response_parsed else {}
+        return response_parsed if isinstance(response_parsed, dict) else {}
+
+    def get_media_by_video_reference_uuid(
+        self, video_reference_uuid: str
+    ) -> Dict[str, Any]:
+        """Return media payload by video reference UUID, normalizing list responses.
+
+        Args:
+            video_reference_uuid: Video reference UUID.
+
+        Returns:
+            Parsed JSON payload.
+        """
+        response = self._request(
+            "get",
+            self.MEDIA_BY_VIDEO_REFERENCE_UUID + "/" + video_reference_uuid,
         )
         response_parsed = response.json()
         if isinstance(response_parsed, list):

@@ -143,6 +143,12 @@ class StubVsClient:
     def get_video_by_video_reference_uuid(self, video_reference_uuid: str):
         return {"uuid": video_reference_uuid}
 
+    def get_media_by_video_reference_uuid(self, video_reference_uuid: str):
+        return {
+            "video_reference_uuid": video_reference_uuid,
+            "video_sequence_name": "seq-{}".format(video_reference_uuid),
+        }
+
 
 def test_check_connection_success_and_failure(monkeypatch):
     service = m3mod.M3Service("https://m3.example")
@@ -303,6 +309,36 @@ def test_m3service_delegates_to_clients():
     assert service.get_all_parts() == ["self"]
     assert service.get_video_data("vr-1") == {"uuid": "vr-1"}
     assert service.get_video_by_video_reference_uuid("vr-1") == {"uuid": "vr-1"}
+    assert service.get_media_by_video_reference_uuid("vr-1") == {
+        "video_reference_uuid": "vr-1",
+        "video_sequence_name": "seq-vr-1",
+    }
+
+
+def test_get_media_by_video_reference_uuid_uses_cache():
+    service = m3mod.M3Service("https://m3.example")
+
+    class CountingVsClient:
+        def __init__(self):
+            self.calls = 0
+
+        def get_media_by_video_reference_uuid(self, video_reference_uuid: str):
+            self.calls += 1
+            return {
+                "video_reference_uuid": video_reference_uuid,
+                "video_sequence_name": "seq-{}".format(video_reference_uuid),
+            }
+
+    vs = CountingVsClient()
+    service._annosaurus = cast(Any, StubAnnoClient())
+    service._oni = cast(Any, StubOniClient())
+    service._vampire_squid = cast(Any, vs)
+
+    first = service.get_media_by_video_reference_uuid("vr-1")
+    second = service.get_media_by_video_reference_uuid("vr-1")
+
+    assert first == second
+    assert vs.calls == 1
 
 
 def test_fetch_image_bytes_success_and_failure(monkeypatch):

@@ -92,6 +92,7 @@ class ImageView(QGraphicsView):
         self.hov_br_rect = None
         self.resize_type = None
         self.resize_offset = None
+        self._hover_handle_type = 0
 
         self.hov_pt_1 = None
         self._image_loading = False
@@ -826,10 +827,16 @@ class ImageView(QGraphicsView):
                 )
 
             if self._mouse_in_view:
-                # Draw crosshairs only while cursor is inside the view.
-                self.scene().addLine(self.mouse_hline, self.mouse_line_pen)
-                self.scene().addLine(self.mouse_vline, self.mouse_line_pen)
-                self.setCursor(Qt.CursorShape.BlankCursor)
+                handle_type = self.resize_type or self._hover_handle_type
+                if handle_type in (1, 4):
+                    self.setCursor(Qt.CursorShape.SizeFDiagCursor)
+                elif handle_type in (2, 3):
+                    self.setCursor(Qt.CursorShape.SizeBDiagCursor)
+                else:
+                    # Draw crosshairs only while cursor is inside the view.
+                    self.scene().addLine(self.mouse_hline, self.mouse_line_pen)
+                    self.scene().addLine(self.mouse_vline, self.mouse_line_pen)
+                    self.setCursor(Qt.CursorShape.BlankCursor)
             else:
                 self.setCursor(Qt.CursorShape.ArrowCursor)
 
@@ -1552,8 +1559,32 @@ class ImageView(QGraphicsView):
         self.hov_pt_1 = None
         self.resize_offset = None
         self.resize_type = None
+        self._hover_handle_type = 0
         self._sam_hover_box = None
         self.redraw()
+
+    def _drag_handle_hover_type(self, scene_pos: QPointF) -> int:
+        if self.hovered_box is None or self.pixmap_scalar is None:
+            return 0
+
+        length = 10.0
+        top_left = self.get_scene_rel_point(
+            QPointF(self.hovered_box.x(), self.hovered_box.y())
+        )
+        x = float(top_left.x())
+        y = float(top_left.y())
+        w = float(self.hovered_box.width()) * float(self.pixmap_scalar)
+        h = float(self.hovered_box.height()) * float(self.pixmap_scalar)
+
+        if QRectF(x, y, length, length).contains(scene_pos):
+            return 1
+        if QRectF(x + w - length, y, length, length).contains(scene_pos):
+            return 2
+        if QRectF(x, y + h - length, length, length).contains(scene_pos):
+            return 3
+        if QRectF(x + w - length, y + h - length, length, length).contains(scene_pos):
+            return 4
+        return 0
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self.pixmap_src:
@@ -1703,15 +1734,20 @@ class ImageView(QGraphicsView):
         )
 
         if self.enabled_observations and not self.resize_type:
+            hovered_item = None
             for uuid, enabled in self.enabled_observations.items():
                 if enabled:
                     hov_box_item = self.observation_map[
                         uuid
                     ].observation.box_manager.get_box_hovered(event.pos())
-                    if hov_box_item:
-                        self.hovered_box = hov_box_item.source
-                    else:
-                        self.hovered_box = None
+                    if hov_box_item and (
+                        hovered_item is None
+                        or hov_box_item.area() < hovered_item.area()
+                    ):
+                        hovered_item = hov_box_item
+            self.hovered_box = hovered_item.source if hovered_item else None
+
+        self._hover_handle_type = self._drag_handle_hover_type(QPointF(event.pos()))
 
         self._maybe_update_hover_candidate(event)
 
@@ -1724,6 +1760,7 @@ class ImageView(QGraphicsView):
 
     def leaveEvent(self, event) -> None:
         self._mouse_in_view = False
+        self._hover_handle_type = 0
         self._sam_hover_box = None
         self._sam_last_hover_point = None
         self.redraw()

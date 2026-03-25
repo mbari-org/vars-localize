@@ -183,7 +183,11 @@ def test_vampire_squid_methods_success():
     endpoint = {"url": "https://vampire.example"}
     session.push("get", FakeResponse(payload={"uuid": "vr-1"}))
     session.push("get", FakeResponse(payload=[{"uuid": "video-1"}]))
+    session.push("get", FakeResponse(payload={"video_sequence_name": "dive-42"}))
     client = clients.VampireSquidClient(endpoint, cast(Any, session))
 
     assert client.get_video_data("vr-1") == {"uuid": "vr-1"}
     assert client.get_video_by_video_reference_uuid("vr-1") == {"uuid": "video-1"}
+    assert client.get_media_by_video_reference_uuid("vr-1") == {
+        "video_sequence_name": "dive-42"
+    }

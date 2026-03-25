@@ -112,6 +112,7 @@ class ImagedMomentEntry:
     timecode: Optional[str] = None
     elapsed_time_millis: Optional[int] = None
     ancillary_data: Dict[str, Any] = field(default_factory=dict)
+    video_sequence_name: Optional[str] = None
     status: str = "unknown"
     raw: Dict[str, Any] = field(default_factory=dict)
     cached_image: Any = None
@@ -160,6 +161,7 @@ class ImagedMomentEntry:
             timecode=data.get("timecode"),
             elapsed_time_millis=elapsed_millis,
             ancillary_data=data.get("ancillary_data") or {},
+            video_sequence_name=data.get("video_sequence_name"),
             raw=dict(data),
         )
 
@@ -171,6 +173,7 @@ class ImagedMomentEntry:
         data["timecode"] = self.timecode
         data["elapsed_time_millis"] = self.elapsed_time_millis
         data["ancillary_data"] = dict(self.ancillary_data)
+        data["video_sequence_name"] = self.video_sequence_name
         data["observations"] = [obs.to_dict() for obs in self.observations]
         return data
 

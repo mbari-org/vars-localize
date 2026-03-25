@@ -1,5 +1,6 @@
 """Qt helpers for running blocking tasks off the UI thread."""
 
+import weakref
 from typing import Callable, Optional
 
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
@@ -11,23 +12,35 @@ class WorkerSignals(QObject):
     finished = pyqtSignal()
 
 
+_GLOBAL_ACTIVE_WORKERS = set()
+
+
 class Worker(QRunnable):
     def __init__(self, fn: Callable, *args, **kwargs):
         super().__init__()
+        self.setAutoDelete(False)
         self._fn = fn
         self._args = args
         self._kwargs = kwargs
         self.signals = WorkerSignals()
 
+    @staticmethod
+    def _safe_emit(signal, *args):
+        try:
+            signal.emit(*args)
+        except RuntimeError:
+            # Owner/UI may be torn down during app shutdown.
+            pass
+
     @pyqtSlot()
     def run(self):
         try:
             result = self._fn(*self._args, **self._kwargs)
-            self.signals.result.emit(result)
+            self._safe_emit(self.signals.result, result)
         except Exception as exc:
-            self.signals.error.emit(exc)
+            self._safe_emit(self.signals.error, exc)
         finally:
-            self.signals.finished.emit()
+            self._safe_emit(self.signals.finished)
 
 
 def run_async(
@@ -55,9 +68,15 @@ def run_async(
         owner._active_workers = set()
 
     owner._active_workers.add(worker)
+    _GLOBAL_ACTIVE_WORKERS.add(worker)
+
+    owner_ref = weakref.ref(owner)
 
     def _cleanup():
-        owner._active_workers.discard(worker)
+        owner_obj = owner_ref()
+        if owner_obj is not None and hasattr(owner_obj, "_active_workers"):
+            owner_obj._active_workers.discard(worker)
+        _GLOBAL_ACTIVE_WORKERS.discard(worker)
 
     worker.signals.finished.connect(_cleanup)
     pool = thread_pool if thread_pool is not None else QThreadPool.globalInstance()

@@ -46,6 +46,7 @@ class M3Service:
         self._annosaurus: Optional[AnnosaurusClient] = None
         self._oni: Optional[OniClient] = None
         self._vampire_squid: Optional[VampireSquidClient] = None
+        self._media_by_video_reference_cache: Dict[str, Dict[str, Any]] = {}
 
     @property
     def m3_url(self) -> str:
@@ -185,6 +186,7 @@ class M3Service:
         self._vampire_squid = VampireSquidClient(
             vampire_squid_endpoint, self._default_session
         )
+        self._media_by_video_reference_cache.clear()
 
         self._annosaurus.authenticate()
 
@@ -452,3 +454,25 @@ class M3Service:
         return self._vampire_squid_client().get_video_by_video_reference_uuid(
             video_reference_uuid
         )
+
+    def get_media_by_video_reference_uuid(
+        self, video_reference_uuid: str
+    ) -> Dict[str, Any]:
+        """Return media payload by video reference UUID with in-memory caching.
+
+        Cache lives for the M3Service lifecycle to avoid repeated calls while paging.
+
+        Args:
+            video_reference_uuid: Video reference UUID.
+
+        Returns:
+            Parsed media payload.
+        """
+        key = str(video_reference_uuid or "").strip()
+        if not key:
+            return {}
+        if key not in self._media_by_video_reference_cache:
+            self._media_by_video_reference_cache[key] = (
+                self._vampire_squid_client().get_media_by_video_reference_uuid(key)
+            )
+        return self._media_by_video_reference_cache[key]

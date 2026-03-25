@@ -121,7 +121,7 @@ class Paginator(QWidget):
             self,
             "Jump to page",
             "Page number:",
-            min=self.current_page,
+            min=1,
             max=self.page_count,
         )
         if not ok:

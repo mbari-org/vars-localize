@@ -1,6 +1,27 @@
 # CHANGELOG
 
 
+## v0.3.0 (2026-03-25)
+
+### Chores
+
+- Remove CLIP from sam extra requirements
+  ([`ca0e2a2`](https://github.com/mbari-org/vars-localize/commit/ca0e2a255cbb4d5429f29113205729a1e86f615d))
+
+### Documentation
+
+- Add main window screenshot
+  ([`a3c2a85`](https://github.com/mbari-org/vars-localize/commit/a3c2a8529e5c28b5027f934b439ef4fbcceada69))
+
+- Fix links, add note about SAM3 download
+  ([`576380d`](https://github.com/mbari-org/vars-localize/commit/576380de65bf5b5b61bfbbc43b417664446cbb30))
+
+### Features
+
+- Add video sequence name handling and caching in M3Service and UI components, minor bugfixes
+  ([`b1aa00e`](https://github.com/mbari-org/vars-localize/commit/b1aa00ec3fcea29e3db315c28670c227c71e6917))
+
+
 ## v0.2.0 (2026-03-25)
 
 ### Chores

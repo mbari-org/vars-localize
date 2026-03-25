@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.10+
 - Access to an M3 instance
 - Network access to required services (VPN if applicable)
 

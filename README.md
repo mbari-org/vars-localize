@@ -18,7 +18,7 @@ To install with local SAM3 assist support, run:
 pip install "vars-localize[sam]"
 ```
 
-Note that SAM3 support requires additional model setup; see the [SAM3 Assistance](https://docs.mbari.org/vars-localize/user-guide/sam3-assistance.md) documentation for details.
+Note that SAM3 support requires additional model setup; see the [SAM3 Assist](https://docs.mbari.org/vars-localize/user-guide/sam3/sam3-assist/) documentation for details.
 
 ## :rocket: Basic Usage
 

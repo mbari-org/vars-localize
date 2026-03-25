@@ -2,6 +2,10 @@
 
 SAM3 assist is optional and runs locally when enabled and configured.
 
+!!! warning
+    SAM3 assist requires significant local resources, including a compatible GPU with sufficient VRAM (8GB+ recommended). Performance may vary based on hardware capabilities.
+    Before using SAM 3, please request access to the checkpoints on the [SAM 3 Hugging Face repo](https://huggingface.co/facebook/sam3).
+
 ## Enabling SAM3
 
 1. Install with SAM extras.

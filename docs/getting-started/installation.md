@@ -44,7 +44,7 @@ You should see the login dialog first.
 
 <!-- ### Screenshot Placeholder: Login Dialog On Startup
 
-![Login dialog on startup placeholder](../images/screenshots/login-dialog-initial.png) --> -->
+![Login dialog on startup placeholder](../images/screenshots/login-dialog-initial.png) -->
 
 !!! tip
     If the login dialog does not appear, check terminal logs and review [Troubleshooting](../reference/troubleshooting.md).

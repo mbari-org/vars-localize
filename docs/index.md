@@ -24,14 +24,7 @@ The app has two primary regions:
 - Left dock: Search and entry browser.
 - Main panel: Image canvas and localization tools.
 
-<!-- ### Screenshot Placeholder: Full Application Window
-
-![Main window placeholder](images/screenshots/app-main-window.png) -->
-
-!!! note "Capture checklist"
-    - Include the full application window.
-    - Keep menu bar, status bar, and both panels visible.
-    - Use a representative loaded imaged moment.
+![Main window](images/screenshots/app-main-window.png)
 
 ## Documentation Map
 

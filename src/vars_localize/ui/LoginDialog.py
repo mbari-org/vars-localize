@@ -93,6 +93,9 @@ class LoginDialog(QtWidgets.QDialog):
     def credentials(self):
         return self._login_form.credentials
 
+    def focus_username(self) -> None:
+        self._login_form._username_line_edit.setFocus()
+
     def set_error(self, message: str) -> None:
         """Show an inline login error message in the dialog."""
         self._error_label.setText(message)

@@ -1,6 +1,5 @@
 """Qt helpers for running blocking tasks off the UI thread."""
 
-import traceback
 from typing import Callable, Optional
 
 from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
@@ -8,7 +7,7 @@ from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
 
 class WorkerSignals(QObject):
     result = pyqtSignal(object)
-    error = pyqtSignal(str)
+    error = pyqtSignal(object)
     finished = pyqtSignal()
 
 
@@ -25,8 +24,8 @@ class Worker(QRunnable):
         try:
             result = self._fn(*self._args, **self._kwargs)
             self.signals.result.emit(result)
-        except Exception:
-            self.signals.error.emit(traceback.format_exc())
+        except Exception as exc:
+            self.signals.error.emit(exc)
         finally:
             self.signals.finished.emit()
 

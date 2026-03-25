@@ -89,6 +89,10 @@ class SearchPanel(QDockWidget):
         self.uuids = []
         self.search_mode = "concept"
         self.active_query = ""
+        self._loading_ops = 0
+        self._request_seq = 0
+        self._active_search_request_id = 0
+        self._active_page_request_id = 0
 
         self.controls_card = QFrame()
         self.controls_card.setObjectName("controlsCard")
@@ -254,6 +258,20 @@ class SearchPanel(QDockWidget):
     def _show_error(self, message: str):
         QMessageBox.critical(self, "Operation Failed", message)
 
+    def _begin_loading(self):
+        self._loading_ops += 1
+        if self._loading_ops == 1:
+            self._state.loading = True
+
+    def _end_loading(self):
+        self._loading_ops = max(0, self._loading_ops - 1)
+        if self._loading_ops == 0:
+            self._state.loading = False
+
+    def _next_request_id(self) -> int:
+        self._request_seq += 1
+        return self._request_seq
+
     def _update_results_label(self):
         total = len(self.uuids)
         mode_label = SEARCH_MODE_CONFIG[self.search_mode]["label"]
@@ -361,29 +379,36 @@ class SearchPanel(QDockWidget):
         query = self.search_bar.text().strip()
         if not query:
             return
-        if self.search_mode == "concept":
+        mode = self.search_mode
+        if mode == "concept":
             self.load_concept(query)
             return
 
         root = cast(Any, self.parent())
         root.display_panel.image_view.set_pixmap(None)
         root.display_panel.image_view.redraw()
-        self._state.loading = True
+        request_id = self._next_request_id()
+        self._active_search_request_id = request_id
+        self._begin_loading()
         run_async(
             self,
             self._resolve_uuids,
-            self.search_mode,
+            mode,
             query,
-            on_result=lambda uuids: self._set_search_results(
-                self.search_mode, query, uuids
+            on_result=lambda uuids: (
+                self._set_search_results(mode, query, uuids)
+                if request_id == self._active_search_request_id
+                else None
             ),
             on_error=lambda err: self._show_error(
                 "Failed to resolve {} search.\n\n{}".format(
-                    SEARCH_MODE_CONFIG[self.search_mode]["label"],
+                    SEARCH_MODE_CONFIG[mode]["label"],
                     err,
                 )
-            ),
-            on_finished=lambda: setattr(self._state, "loading", False),
+            )
+            if request_id == self._active_search_request_id
+            else None,
+            on_finished=self._end_loading,
         )
 
     def _clear_results(self):
@@ -400,7 +425,7 @@ class SearchPanel(QDockWidget):
         self._update_results_label()
 
     def _load_concepts_async(self):
-        self._state.loading = True
+        self._begin_loading()
 
         def _on_result(concepts):
             self._state.concepts = concepts
@@ -412,7 +437,7 @@ class SearchPanel(QDockWidget):
             on_error=lambda err: self._show_error(
                 "Failed to load concepts from M3.\n\n{}".format(err)
             ),
-            on_finished=lambda: setattr(self._state, "loading", False),
+            on_finished=self._end_loading,
         )
 
     def concept_selected(self, concept):
@@ -445,9 +470,13 @@ class SearchPanel(QDockWidget):
         root.display_panel.image_view.set_pixmap(None)
         root.display_panel.image_view.redraw()
 
-        self._state.loading = True
+        request_id = self._next_request_id()
+        self._active_search_request_id = request_id
+        self._begin_loading()
 
         def _on_result(concept_uuids):
+            if request_id != self._active_search_request_id:
+                return
             self._set_search_results("concept", concept, concept_uuids)
 
         run_async(
@@ -459,14 +488,18 @@ class SearchPanel(QDockWidget):
                 "Failed to load imaged moments for concept {}.\n\n{}".format(
                     concept, err
                 )
-            ),
-            on_finished=lambda: setattr(self._state, "loading", False),
+            )
+            if request_id == self._active_search_request_id
+            else None,
+            on_finished=self._end_loading,
         )
 
     def load_page(self):
         page_uuids = self.uuids[self.paginator.slice]
 
-        self._state.loading = True
+        request_id = self._next_request_id()
+        self._active_page_request_id = request_id
+        self._begin_loading()
 
         def _fetch_page_data():
             return [hydrate_imaged_moment_data(self._m3, uuid) for uuid in page_uuids]
@@ -474,11 +507,15 @@ class SearchPanel(QDockWidget):
         run_async(
             self,
             _fetch_page_data,
-            on_result=self.entry_tree.load_page_data,
+            on_result=lambda data: self.entry_tree.load_page_data(data)
+            if request_id == self._active_page_request_id
+            else None,
             on_error=lambda err: self._show_error(
                 "Failed to load imaged moment page data.\n\n{}".format(err)
-            ),
-            on_finished=lambda: setattr(self._state, "loading", False),
+            )
+            if request_id == self._active_page_request_id
+            else None,
+            on_finished=self._end_loading,
         )
 
     def select_next(self):
@@ -588,8 +625,15 @@ class SearchPanel(QDockWidget):
             def _on_done(_):
                 moment = item.parent()
                 if isinstance(moment, EntryTreeItem):
-                    self.entry_tree.load_imaged_moment_entry(moment)
-                    root.display_panel.image_view.set_entry(moment)
+                    self.entry_tree.load_imaged_moment_entry_async(
+                        moment,
+                        on_error=lambda err: self._show_error(
+                            "Failed to refresh imaged moment.\n\n{}".format(err)
+                        ),
+                        on_finished=lambda: root.display_panel.image_view.set_entry(
+                            moment
+                        ),
+                    )
 
             run_async(
                 self,

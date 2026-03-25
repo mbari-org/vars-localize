@@ -7,7 +7,9 @@ import sys
 from PyQt6.QtWidgets import QApplication
 
 from vars_localize.ui.AppWindow import AppWindow
-from vars_localize.util.logging import configure_logging
+from vars_localize.util.logging import configure_logging, get_logger
+
+logger = get_logger("Main")
 
 
 def main():
@@ -17,12 +19,16 @@ def main():
     configure_logging()
     app = QApplication(sys.argv)
 
-    window = AppWindow()
+    try:
+        window = AppWindow()
+    except RuntimeError as exc:
+        logger.error("{}", exc)
+        return 1
+
     window.show()
 
-    exit_code = app.exec()
-    sys.exit(exit_code)
+    return app.exec()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

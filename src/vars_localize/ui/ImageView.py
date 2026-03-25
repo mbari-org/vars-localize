@@ -34,6 +34,7 @@ from vars_localize.ui.BoundingBox import (
 from vars_localize.ui.PropertiesDialog import PropertiesDialog
 from vars_localize.ui.theme import PALETTE
 from vars_localize.services import M3Service
+from vars_localize.services.errors import ServiceError
 from vars_localize.util.logging import get_logger
 from vars_localize.util.qt_async import run_async
 from vars_localize.util.utils import center_window
@@ -68,6 +69,9 @@ class ImageView(QGraphicsView):
 
         self.select_next = None
         self.select_prev = None
+        self._observation_select_callback: Optional[Callable[[EntryTreeItem], None]] = (
+            None
+        )
         self.m3_service = None
         self.sam3_service = None
 
@@ -111,13 +115,14 @@ class ImageView(QGraphicsView):
 
         self._sam_min_area = self.SAM_MIN_AREA
         self._sam_overlap_iou = self.SAM_OVERLAP_IOU
+        self._video_data_request_uuid = None
 
     def configure_sam_params(self, min_area: int, overlap_iou: float):
         self._sam_min_area = max(1, int(min_area))
         self._sam_overlap_iou = max(0.0, min(1.0, float(overlap_iou)))
 
     def _m3_fetch_image(self, url: str):
-        return self._require_m3_service().fetch_image(url)
+        return self._require_m3_service().fetch_image_bytes(url)
 
     def _m3_get_all_parts(self):
         return self._require_m3_service().get_all_parts()
@@ -145,6 +150,80 @@ class ImageView(QGraphicsView):
     def set_sam_candidate_ui_callback(self, callback: Callable[[bool, int, int], None]):
         self._sam_candidate_ui_callback = callback
         self._notify_sam_candidate_state()
+
+    def set_observation_select_callback(
+        self, callback: Callable[[EntryTreeItem], None]
+    ):
+        self._observation_select_callback = callback
+
+    @staticmethod
+    def _bytes_to_pixmap(image_bytes: bytes) -> Optional[QPixmap]:
+        if not image_bytes:
+            return None
+        pixmap = QPixmap()
+        if not pixmap.loadFromData(image_bytes):
+            return None
+        return pixmap
+
+    @staticmethod
+    def _as_source_box(raw_box: Any, concept: str) -> SourceBoundingBox:
+        if isinstance(raw_box, SourceBoundingBox):
+            return raw_box
+
+        box_dict = dict(raw_box or {})
+        box_json = {
+            "x": int(box_dict.get("x", 0)),
+            "y": int(box_dict.get("y", 0)),
+            "width": int(box_dict.get("width", 0)),
+            "height": int(box_dict.get("height", 0)),
+            "image_reference_uuid": box_dict.get("image_reference_uuid"),
+        }
+        return SourceBoundingBox(
+            box_json,
+            concept,
+            observer=box_dict.get("observer"),
+            observation_uuid=box_dict.get("observation_uuid"),
+            association_uuid=box_dict.get("association_uuid"),
+            part=box_dict.get("part"),
+        )
+
+    def _hydrate_observation_boxes(self, observation):
+        observation.boxes = [
+            self._as_source_box(box, observation.concept)
+            for box in list(observation.boxes or [])
+        ]
+        observation.video_boxes = [
+            self._as_source_box(box, observation.concept)
+            for box in list(observation.video_boxes or [])
+        ]
+
+    def _ensure_video_data_loaded(self, moment: ImagedMomentEntry):
+        if moment.video_data is not None or not moment.video_reference_uuid:
+            return
+
+        request_uuid = moment.uuid
+        self._video_data_request_uuid = request_uuid
+
+        def _on_result(video_data):
+            if self.moment is None or self._video_data_request_uuid != request_uuid:
+                return
+            if self.moment.imaged_moment.uuid != request_uuid:
+                return
+            self.moment.imaged_moment.video_data = (
+                video_data if isinstance(video_data, dict) else None
+            )
+            self.redraw()
+
+        def _on_error(err):
+            logger.warning("Video metadata preload failed: {}", err)
+
+        run_async(
+            self,
+            self._m3_get_video_data,
+            moment.video_reference_uuid,
+            on_result=_on_result,
+            on_error=_on_error,
+        )
 
     def set_sam_status_ui_callback(self, callback: Callable[[str], None]):
         self._sam_status_ui_callback = callback
@@ -770,7 +849,9 @@ class ImageView(QGraphicsView):
                 self,
                 self._m3_fetch_image,
                 moment.image_url,
-                on_result=_on_result,
+                on_result=lambda image_bytes: _on_result(
+                    self._bytes_to_pixmap(image_bytes)
+                ),
                 on_error=_on_error,
             )
         else:
@@ -793,6 +874,7 @@ class ImageView(QGraphicsView):
         self.enabled_observations = dict()
         for observation_entry in self.observation_map.values():
             observation = observation_entry.observation
+            self._hydrate_observation_boxes(observation)
             uuid = observation.uuid
             observation.box_manager = BoundingBoxManager()
             observation.box_manager.set_box_click_callback(
@@ -801,8 +883,8 @@ class ImageView(QGraphicsView):
 
             def override_obs_selection(obs_entry):
                 def wrapped(_):
-                    self.parent().parent().parent().load_entry(obs_entry, None)
-                    self.parent().parent().parent().search_panel.select_entry(obs_entry)
+                    if self._observation_select_callback is not None:
+                        self._observation_select_callback(obs_entry)
 
                 return wrapped
 
@@ -810,6 +892,8 @@ class ImageView(QGraphicsView):
                 override_obs_selection(observation_entry)
             )
             self.enabled_observations[uuid] = True
+
+        self._ensure_video_data_loaded(moment)
 
     def draw_drag_corners(self, box: GraphicsBoundingBox):
         length = 10
@@ -947,9 +1031,6 @@ class ImageView(QGraphicsView):
                 "T", " "
             ).replace("Z", "")
 
-        if moment.video_data is None and moment.video_reference_uuid:
-            moment.video_data = self._m3_get_video_data(moment.video_reference_uuid)
-
         if moment.video_data and "uri" in moment.video_data:
             uri = moment.video_data["uri"]
             if uri.startswith("urn:"):
@@ -1047,12 +1128,19 @@ class ImageView(QGraphicsView):
         part_after = box.source.part or "self"
         if box_json_after != box_json_before or part_after != part_before:
             box.source.observer = self.observer  # Update observer field
-            self._m3_modify_box(
-                box_json_after,
-                box.source.observation_uuid,
-                box.source.association_uuid,
-                to_concept=part_after,
-            )
+            try:
+                self._m3_modify_box(
+                    box_json_after,
+                    box.source.observation_uuid,
+                    box.source.association_uuid,
+                    to_concept=part_after,
+                )
+            except ServiceError as exc:
+                QMessageBox.warning(
+                    self,
+                    "Update failed",
+                    "Could not update bounding box.\n\n{}".format(exc),
+                )
             update_imaged_moment_entry(self.moment)  # Update tree
 
         self.pt_1 = None
@@ -1071,7 +1159,14 @@ class ImageView(QGraphicsView):
         source_boxes = observation.boxes
         if box in source_boxes:
             source_boxes.remove(box)
-            self._m3_delete_box(box.association_uuid)  # Call deletion request
+            try:
+                self._m3_delete_box(box.association_uuid)  # Call deletion request
+            except ServiceError as exc:
+                QMessageBox.warning(
+                    self,
+                    "Delete failed",
+                    "Could not delete bounding box.\n\n{}".format(exc),
+                )
             update_imaged_moment_entry(self.moment)  # Update tree
 
     def calc_drag_rect(self):
@@ -1187,31 +1282,52 @@ class ImageView(QGraphicsView):
         if moment.recorded_timestamp:
             kwargs["recorded_timestamp"] = moment.recorded_timestamp
 
-        observation = self._m3_create_observation(  # Call observation creation request
-            moment.video_reference_uuid,
-            concept,
-            self.observer,
-            **kwargs,
+        try:
+            observation = (
+                self._m3_create_observation(  # Call observation creation request
+                    moment.video_reference_uuid,
+                    concept,
+                    self.observer,
+                    **kwargs,
+                )
+            )
+        except ServiceError as exc:
+            raise RuntimeError(
+                "Could not create observation.\n\n{}".format(exc)
+            ) from exc
+
+        if not observation:
+            raise RuntimeError("Observation creation returned an empty payload.")
+
+        observation_uuid = observation.get("observation_uuid") or observation.get(
+            "uuid"
         )
+        if not observation_uuid:
+            raise RuntimeError("Observation creation response missing UUID field.")
 
-        if not observation or "observation_uuid" not in observation:
-            return None
-
+        observation["observation_uuid"] = str(observation_uuid)
         self.moment.treeWidget().editable_uuids.add(observation["observation_uuid"])
-
-        self.reload_moment()
-
         return observation
 
     def reload_moment(self):
         """Fully reload the current imaged moment entry."""
         image = self.moment.imaged_moment.cached_image
-        self.moment.treeWidget().load_imaged_moment_entry(
-            self.moment
-        )  # Reload the tree
-        if image is not None:
-            self.moment.imaged_moment.cached_image = image
-        self.load_moment(self.moment)  # Reload imaged moment
+
+        def _on_done():
+            if image is not None and self.moment is not None:
+                self.moment.imaged_moment.cached_image = image
+            if self.moment is not None:
+                self.load_moment(self.moment)  # Reload imaged moment
+
+        self.moment.treeWidget().load_imaged_moment_entry_async(
+            self.moment,
+            on_error=lambda err: QMessageBox.warning(
+                self,
+                "Refresh failed",
+                "Could not reload imaged moment.\n\n{}".format(err),
+            ),
+            on_finished=_on_done,
+        )
 
     def handle_new_box(self, box: SourceBoundingBox) -> None:
         """Create a new box, creating an observation if needed.
@@ -1220,6 +1336,7 @@ class ImageView(QGraphicsView):
             box: Source bounding box.
         """
         uuid = self.observation_uuid
+        created_new_observation = False
         if not uuid:  # Imaged moment selected
             new_concept = self.prompt_concept()
             if not new_concept:  # No concept was specified
@@ -1231,12 +1348,15 @@ class ImageView(QGraphicsView):
                 )
             box.set_label(new_concept)
             uuid = observation["observation_uuid"]
-
-        if not self.observation_map or uuid not in self.observation_map:
-            raise RuntimeError("Could not resolve the target observation for this box.")
+            created_new_observation = True
 
         box.observation_uuid = uuid
-        observation = self.observation_map[uuid].observation
+
+        observation = None
+        if self.observation_map and uuid in self.observation_map:
+            observation = self.observation_map[uuid].observation
+        elif not created_new_observation:
+            raise RuntimeError("Could not resolve the target observation for this box.")
 
         response_json = self._m3_create_box(box.get_json(), uuid, to_concept=box.part)
         if not response_json or "uuid" not in response_json:
@@ -1245,9 +1365,13 @@ class ImageView(QGraphicsView):
             )
 
         box.association_uuid = response_json["uuid"]
-        self.draw_bounding_box(box, observation.box_manager)
-        observation.boxes.append(box)
-        update_imaged_moment_entry(self.moment)  # Update tree
+        if observation is not None:
+            self.draw_bounding_box(box, observation.box_manager)
+            observation.boxes.append(box)
+            update_imaged_moment_entry(self.moment)  # Update tree
+        else:
+            # For newly-created observations, refresh once to hydrate new row and box.
+            self.reload_moment()
 
     def reset_mouse(self):
         self.pt_1 = None
@@ -1289,12 +1413,19 @@ class ImageView(QGraphicsView):
                         QMessageBox.warning(self, "Box creation failed", str(exc))
 
             if self.resize_type:
-                self._m3_modify_box(
-                    self.hovered_box.get_json(),
-                    self.hovered_box.observation_uuid,
-                    self.hovered_box.association_uuid,
-                    to_concept=self.hovered_box.part or "self",
-                )
+                try:
+                    self._m3_modify_box(
+                        self.hovered_box.get_json(),
+                        self.hovered_box.observation_uuid,
+                        self.hovered_box.association_uuid,
+                        to_concept=self.hovered_box.part or "self",
+                    )
+                except ServiceError as exc:
+                    QMessageBox.warning(
+                        self,
+                        "Resize failed",
+                        "Could not persist box resize.\n\n{}".format(exc),
+                    )
 
             self.reset_mouse()
 

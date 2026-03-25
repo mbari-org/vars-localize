@@ -53,7 +53,7 @@ def encode_form(json_obj):
 
 
 def extract_bounding_boxes(associations: list, concept: str, observation_uuid: str):
-    """Yield source bounding boxes from association payloads.
+    """Yield normalized bounding-box dictionaries from association payloads.
 
     Args:
         associations: JSON list of associations.
@@ -61,11 +61,8 @@ def extract_bounding_boxes(associations: list, concept: str, observation_uuid: s
         observation_uuid: Observation UUID attached to each box.
 
     Yields:
-        SourceBoundingBox: Parsed source bounding box instances.
+        dict: Normalized bounding box payloads.
     """
-    # Delayed import avoids import cycle with ui.BoundingBox -> util.utils.
-    from vars_localize.ui.BoundingBox import SourceBoundingBox
-
     for association in associations:  # Generate source bounding boxes
         if association.get("link_name") != "bounding box":
             continue
@@ -79,14 +76,18 @@ def extract_bounding_boxes(associations: list, concept: str, observation_uuid: s
             continue
         if not all(key in box_json for key in ("x", "y", "width", "height")):
             continue
-        yield SourceBoundingBox(  # Create source box
-            box_json,
-            concept,
-            observer=box_json.get("observer", None),
-            observation_uuid=observation_uuid,
-            association_uuid=association.get("uuid"),
-            part=association.get("to_concept"),
-        )
+        yield {
+            "x": int(box_json["x"]),
+            "y": int(box_json["y"]),
+            "width": int(box_json["width"]),
+            "height": int(box_json["height"]),
+            "image_reference_uuid": box_json.get("image_reference_uuid"),
+            "observer": box_json.get("observer"),
+            "observation_uuid": observation_uuid,
+            "association_uuid": association.get("uuid"),
+            "part": association.get("to_concept"),
+            "concept": concept,
+        }
 
 
 def split_comma_list(comma_str: str):

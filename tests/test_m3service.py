@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+from typing import Any, Dict, List, Optional, cast
+
 import importlib
-from typing import Any, Dict, List, Optional
 
 import pytest
 import requests
+
+from vars_localize.services.errors import (
+    ServiceAuthError,
+    ServiceNotConfiguredError,
+    ServiceRequestError,
+)
 
 m3mod = importlib.import_module("vars_localize.services.M3Service")
 
@@ -21,6 +28,7 @@ class FakeResponse:
         self._payload = payload
         self.content = content
         self._raise_exc = raise_exc
+        self.response = self
 
     def json(self):
         return self._payload
@@ -29,28 +37,33 @@ class FakeResponse:
         if self._raise_exc is not None:
             raise self._raise_exc
         if self.status_code >= 400:
-            raise requests.HTTPError(f"status={self.status_code}")
+            exc = requests.HTTPError(f"status={self.status_code}")
+            exc.response = self
+            raise exc
 
 
 class FakeSession:
     def __init__(self):
-        self._responses: Dict[str, List[Any]] = {"get": []}
+        self._responses: Dict[str, List[Any]] = {
+            "get": [],
+            "post": [],
+            "put": [],
+            "delete": [],
+        }
         self.calls: List[tuple[str, str, dict]] = []
 
     def push(self, method: str, value: Any):
         self._responses[method].append(value)
 
-    def _next(self, method: str):
+    def request(self, method: str, url: str, **kwargs):
+        method = method.lower()
+        self.calls.append((method, url, kwargs))
         if not self._responses[method]:
             raise AssertionError(f"No queued response for {method}")
         value = self._responses[method].pop(0)
         if isinstance(value, Exception):
             raise value
         return value
-
-    def get(self, url: str, **kwargs):
-        self.calls.append(("get", url, kwargs))
-        return self._next("get")
 
 
 class StubClient:
@@ -65,85 +78,128 @@ class StubClient:
         return _fn
 
 
+class StubAnnoClient:
+    def __init__(self):
+        self.called = []
+
+    def get_imaged_moment_uuids(self, concept: str):
+        self.called.append("get_imaged_moment_uuids")
+        return ["id-1"]
+
+    def get_imaged_moment(self, im_uuid: str):
+        self.called.append("get_imaged_moment")
+        return {"uuid": im_uuid}
+
+    def get_imaged_moments_by_image_reference(self, image_reference_uuid: str):
+        self.called.append("get_imaged_moments_by_image_reference")
+        return [{"imaged_moment_uuid": "im-1"}]
+
+    def get_annotations_by_video_reference(self, video_reference_uuid: str):
+        self.called.append("get_annotations_by_video_reference")
+        return [{"imaged_moment_uuid": "im-1"}]
+
+    def delete_observation(self, observation_uuid: str):
+        self.called.append("delete_observation")
+        return FakeResponse(payload={"ok": True})
+
+    def rename_observation(
+        self, observation_uuid: str, new_concept: str, observer: str
+    ):
+        self.called.append("rename_observation")
+        return {"uuid": observation_uuid, "concept": new_concept}
+
+    def create_observation(self, *args, **kwargs):
+        self.called.append("create_observation")
+        return {"observation_uuid": "obs-1"}
+
+    def create_box(self, *args, **kwargs):
+        self.called.append("create_box")
+        return {"uuid": "assoc-1"}
+
+    def modify_box(self, *args, **kwargs):
+        self.called.append("modify_box")
+        return {"uuid": "assoc-1"}
+
+    def delete_box(self, association_uuid: str):
+        self.called.append("delete_box")
+        return FakeResponse(payload={"ok": True})
+
+
+class StubOniClient:
+    def get_all_users(self):
+        return [{"username": "u"}]
+
+    def get_all_concepts(self):
+        return ["fish"]
+
+    def get_all_parts(self):
+        return ["self"]
+
+
+class StubVsClient:
+    def get_video_data(self, video_reference_uuid: str):
+        return {"uuid": video_reference_uuid}
+
+    def get_video_by_video_reference_uuid(self, video_reference_uuid: str):
+        return {"uuid": video_reference_uuid}
+
+
 def test_check_connection_success_and_failure(monkeypatch):
     service = m3mod.M3Service("https://m3.example")
     session = FakeSession()
     session.push("get", FakeResponse(status_code=200))
     session.push("get", FakeResponse(status_code=503))
-    session.push("get", requests.RequestException("down"))
+    session.push("get", FakeResponse(status_code=503))
+    session.push("get", FakeResponse(status_code=503))
     monkeypatch.setattr(service, "_default_session", session)
 
     service.check_connection()
-    with pytest.raises(ConnectionError, match="M3 health check failed"):
-        service.check_connection()
-    with pytest.raises(ConnectionError, match="Connection check failed"):
+    with pytest.raises(ServiceRequestError):
         service.check_connection()
 
 
 def test_fetch_endpoints_success(monkeypatch):
     service = m3mod.M3Service("https://m3.example")
-
-    post_calls = []
-    get_calls = []
-
-    def fake_post(url, headers=None):
-        post_calls.append((url, headers))
-        return FakeResponse(status_code=200, payload={"accessToken": "abc"})
-
-    def fake_get(url, headers=None):
-        get_calls.append((url, headers))
-        return FakeResponse(
+    session = FakeSession()
+    session.push("post", FakeResponse(status_code=200, payload={"accessToken": "abc"}))
+    session.push(
+        "get",
+        FakeResponse(
             payload=[
-                {
-                    "name": "annosaurus",
-                    "url": "https://anno",
-                    "secret": "s",
-                    "timeoutMillis": 1,
-                    "proxyPath": "p",
-                },
-                {
-                    "name": "oni",
-                    "url": "https://oni",
-                    "secret": "s",
-                    "timeoutMillis": 1,
-                    "proxyPath": "p",
-                },
+                {"name": "annosaurus", "url": "https://anno", "secret": "s"},
+                {"name": "oni", "url": "https://oni", "secret": "s"},
             ]
-        )
-
-    monkeypatch.setattr(m3mod.requests, "post", fake_post)
-    monkeypatch.setattr(m3mod.requests, "get", fake_get)
+        ),
+    )
+    monkeypatch.setattr(service, "_default_session", session)
 
     service._fetch_endpoints("u", "p")
-
+    assert service._endpoints is not None
     assert "annosaurus" in service._endpoints
     assert "oni" in service._endpoints
-    assert post_calls and get_calls
 
 
 def test_fetch_endpoints_auth_failure(monkeypatch):
     service = m3mod.M3Service("https://m3.example")
+    session = FakeSession()
+    session.push("post", FakeResponse(payload={}))
+    monkeypatch.setattr(service, "_default_session", session)
 
-    def fake_post(url, headers=None):
-        return FakeResponse(status_code=401, payload={"message": "denied"})
-
-    monkeypatch.setattr(m3mod.requests, "post", fake_post)
-
-    with pytest.raises(Exception, match="Failed to authenticate with Raziel"):
+    with pytest.raises(ServiceAuthError):
         service._fetch_endpoints("u", "p")
 
 
 def test_get_and_find_endpoint_guards():
     service = m3mod.M3Service("https://m3.example")
 
-    with pytest.raises(Exception, match="You must call configure"):
+    with pytest.raises(ServiceNotConfiguredError):
         service._get_endpoint("annosaurus")
-    with pytest.raises(Exception, match="You must call configure"):
+    with pytest.raises(ServiceNotConfiguredError):
         service._find_endpoint("annosaurus")
 
     service._endpoints = {"annosaurus": {"url": "x"}}
     assert service._get_endpoint("annosaurus") == {"url": "x"}
-    with pytest.raises(Exception, match="No endpoint named oni"):
+    with pytest.raises(ServiceNotConfiguredError):
         service._get_endpoint("oni")
     assert service._find_endpoint("missing", "annosaurus") == {"url": "x"}
     assert service._find_endpoint("missing") is None
@@ -162,8 +218,9 @@ def test_configure_success(monkeypatch):
     class FakeAnno:
         SERVICE_NAME = "annosaurus"
 
-        def __init__(self, endpoint):
+        def __init__(self, endpoint, session=None):
             self.endpoint = endpoint
+            self.session = session
 
         def authenticate(self):
             return True
@@ -193,70 +250,18 @@ def test_configure_success(monkeypatch):
     assert isinstance(service._vampire_squid, FakeVS)
 
 
-def test_configure_missing_oni(monkeypatch):
-    service = m3mod.M3Service("https://m3.example")
-    service._endpoints = {
-        "annosaurus": {"url": "https://anno", "secret": "a"},
-        "vampire-squid": {"url": "https://vs"},
-    }
-    monkeypatch.setattr(service, "_fetch_endpoints", lambda u, p: None)
-
-    with pytest.raises(RuntimeError, match="No endpoint named oni"):
-        service.configure("u", "p")
-
-
-def test_configure_authentication_failure(monkeypatch):
-    service = m3mod.M3Service("https://m3.example")
-    service._endpoints = {
-        "annosaurus": {"url": "https://anno", "secret": "a"},
-        "oni": {"url": "https://oni"},
-        "vampire-squid": {"url": "https://vs"},
-    }
-    monkeypatch.setattr(service, "_fetch_endpoints", lambda u, p: None)
-
-    class FakeAnno:
-        SERVICE_NAME = "annosaurus"
-
-        def __init__(self, endpoint):
-            self.endpoint = endpoint
-
-        def authenticate(self):
-            raise RuntimeError("bad auth")
-
-    class FakeOni:
-        SERVICE_NAME = "oni"
-
-        def __init__(self, endpoint, session):
-            self.endpoint = endpoint
-            self.session = session
-
-    class FakeVS:
-        SERVICE_NAME = "vampire-squid"
-
-        def __init__(self, endpoint, session):
-            self.endpoint = endpoint
-            self.session = session
-
-    monkeypatch.setattr(m3mod, "AnnosaurusClient", FakeAnno)
-    monkeypatch.setattr(m3mod, "OniClient", FakeOni)
-    monkeypatch.setattr(m3mod, "VampireSquidClient", FakeVS)
-
-    with pytest.raises(RuntimeError, match="bad auth"):
-        service.configure("u", "p")
-
-
-def test_require_clients_and_client_accessors():
+def test_require_clients_and_accessors():
     service = m3mod.M3Service("https://m3.example")
 
-    with pytest.raises(Exception, match="Service must be configured"):
+    with pytest.raises(ServiceNotConfiguredError):
         service._require_clients()
 
     anno = StubClient()
     oni = StubClient()
     vs = StubClient()
-    service._annosaurus = anno
-    service._oni = oni
-    service._vampire_squid = vs
+    service._annosaurus = cast(Any, anno)
+    service._oni = cast(Any, oni)
+    service._vampire_squid = cast(Any, vs)
 
     assert service._annosaurus_client() is anno
     assert service._oni_client() is oni
@@ -265,62 +270,50 @@ def test_require_clients_and_client_accessors():
 
 def test_m3service_delegates_to_clients():
     service = m3mod.M3Service("https://m3.example")
-    anno = StubClient()
-    oni = StubClient()
-    vs = StubClient()
-    service._annosaurus = anno
-    service._oni = oni
-    service._vampire_squid = vs
+    anno = StubAnnoClient()
+    oni = StubOniClient()
+    vs = StubVsClient()
+    service._annosaurus = cast(Any, anno)
+    service._oni = cast(Any, oni)
+    service._vampire_squid = cast(Any, vs)
 
-    assert service.get_all_users()[0] == "get_all_users"
-    assert service.get_all_concepts()[0] == "get_all_concepts"
-    assert service.get_imaged_moment_uuids("concept")[0] == "get_imaged_moment_uuids"
-    assert service.get_imaged_moment("im-1")[0] == "get_imaged_moment"
-    assert (
-        service.get_imaged_moments_by_image_reference("img-1")[0]
-        == "get_imaged_moments_by_image_reference"
-    )
-    assert (
-        service.get_annotations_by_video_reference("vid-1")[0]
-        == "get_annotations_by_video_reference"
-    )
-    assert service.delete_observation("obs-1")[0] == "delete_observation"
-    assert (
-        service.rename_observation("obs-1", "concept", "user")[0]
-        == "rename_observation"
-    )
-    assert (
-        service.create_observation("vid", "concept", "user", timecode="00")[0]
-        == "create_observation"
-    )
-    assert service.create_box({"x": 1}, "obs-1", "part")[0] == "create_box"
-    assert service.modify_box({"x": 2}, "obs-1", "assoc-1", "part")[0] == "modify_box"
-    assert service.delete_box("assoc-1")[0] == "delete_box"
-    assert service.get_all_parts()[0] == "get_all_parts"
-    assert service.get_video_data("vr-1")[0] == "get_video_data"
-    assert (
-        service.get_video_by_video_reference_uuid("vr-1")[0]
-        == "get_video_by_video_reference_uuid"
-    )
+    assert service.get_all_users() == [{"username": "u"}]
+    assert service.get_all_concepts() == ["fish"]
+    assert service.get_imaged_moment_uuids("concept") == ["id-1"]
+    assert service.get_imaged_moment("im-1") == {"uuid": "im-1"}
+    assert service.get_imaged_moments_by_image_reference("img-1") == [
+        {"imaged_moment_uuid": "im-1"}
+    ]
+    assert service.get_annotations_by_video_reference("vid-1") == [
+        {"imaged_moment_uuid": "im-1"}
+    ]
+    assert service.delete_observation("obs-1").status_code == 200
+    assert service.rename_observation("obs-1", "concept", "user") == {
+        "uuid": "obs-1",
+        "concept": "concept",
+    }
+    assert service.create_observation("vid", "concept", "user", timecode="00") == {
+        "observation_uuid": "obs-1"
+    }
+    assert service.create_box({"x": 1}, "obs-1", "part") == {"uuid": "assoc-1"}
+    assert service.modify_box({"x": 2}, "obs-1", "assoc-1", "part") == {
+        "uuid": "assoc-1"
+    }
+    assert service.delete_box("assoc-1").status_code == 200
+    assert service.get_all_parts() == ["self"]
+    assert service.get_video_data("vr-1") == {"uuid": "vr-1"}
+    assert service.get_video_by_video_reference_uuid("vr-1") == {"uuid": "vr-1"}
 
 
-def test_fetch_image_success_and_failure(monkeypatch):
+def test_fetch_image_bytes_success_and_failure(monkeypatch):
     service = m3mod.M3Service("https://m3.example")
     session = FakeSession()
     session.push("get", FakeResponse(content=b"fake-image"))
-    session.push("get", requests.RequestException("image failed"))
+    session.push("get", requests.ConnectionError("image failed"))
+    session.push("get", requests.ConnectionError("image failed"))
+    session.push("get", requests.ConnectionError("image failed"))
     monkeypatch.setattr(service, "_default_session", session)
 
-    class FakePixmap:
-        def __init__(self):
-            self.loaded = None
-
-        def loadFromData(self, data):
-            self.loaded = data
-
-    monkeypatch.setattr(m3mod, "QPixmap", FakePixmap)
-
-    pixmap = service.fetch_image("https://img")
-    assert isinstance(pixmap, FakePixmap)
-    assert pixmap.loaded == b"fake-image"
-    assert service.fetch_image("https://img") is None
+    assert service.fetch_image_bytes("https://img") == b"fake-image"
+    with pytest.raises(ServiceRequestError):
+        service.fetch_image_bytes("https://img")

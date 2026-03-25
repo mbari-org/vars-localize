@@ -30,6 +30,7 @@ from vars_localize.services import M3Service
 from vars_localize.ui.ConceptSearchbar import ConceptSearchbar
 from vars_localize.ui.theme import status_brush
 from vars_localize.util.logging import get_logger
+from vars_localize.util.qt_async import run_async
 
 logger = get_logger("EntryTree")
 
@@ -579,6 +580,7 @@ class ImagedMomentTree(QWidget):
             self.itemDoubleClicked.emit(payload, table_item.column())
 
     def load_imaged_moment_entry(self, entry: EntryTreeItem):
+        """Synchronously refresh an imaged moment entry."""
         uuid = _uuid_from_payload(entry.payload)
         if not uuid:
             return
@@ -598,6 +600,14 @@ class ImagedMomentTree(QWidget):
             meta.cached_image = previous_payload.cached_image
             meta.video_data = previous_payload.video_data
 
+        self._apply_loaded_imaged_moment_entry(entry, meta, selected_observation_uuid)
+
+    def _apply_loaded_imaged_moment_entry(
+        self,
+        entry: EntryTreeItem,
+        meta: ImagedMomentEntry,
+        selected_observation_uuid: Optional[str] = None,
+    ):
         entry.payload = meta
         entry.clear_children()
         for obs in meta.observations:
@@ -618,6 +628,42 @@ class ImagedMomentTree(QWidget):
             self._populate_observations(entry)
             if self._selected_observation is not None:
                 self._populate_associations(self._selected_observation)
+
+    def load_imaged_moment_entry_async(
+        self,
+        entry: EntryTreeItem,
+        on_error=None,
+        on_finished=None,
+    ):
+        """Refresh an imaged moment entry without blocking the UI thread."""
+        uuid = _uuid_from_payload(entry.payload)
+        if not uuid:
+            return
+
+        selected_observation_uuid = None
+        if (
+            self._selected_observation is not None
+            and self._selected_observation.is_observation
+        ):
+            selected_observation_uuid = self._selected_observation.observation.uuid
+
+        previous_payload = (
+            entry.payload if isinstance(entry.payload, ImagedMomentEntry) else None
+        )
+
+        run_async(
+            self,
+            hydrate_imaged_moment_data,
+            self._m3,
+            uuid,
+            on_result=lambda meta: self._apply_loaded_imaged_moment_entry(
+                entry,
+                _copy_payload_cache(meta, previous_payload),
+                selected_observation_uuid,
+            ),
+            on_error=on_error,
+            on_finished=on_finished,
+        )
 
     def _refresh_moment_row(self, entry: EntryTreeItem):
         for row in range(self.moments_table.rowCount()):
@@ -846,6 +892,17 @@ def update_imaged_moment_entry(entry: EntryTreeItem):
         tree._refresh_moment_row(entry)
         if tree._selected_moment is entry:
             tree._populate_observations(entry)
+
+
+def _copy_payload_cache(
+    meta: ImagedMomentEntry,
+    previous_payload: Optional[ImagedMomentEntry],
+) -> ImagedMomentEntry:
+    if previous_payload is None:
+        return meta
+    meta.cached_image = previous_payload.cached_image
+    meta.video_data = previous_payload.video_data
+    return meta
 
 
 def hydrate_imaged_moment_data(

@@ -3,14 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
-
-from PyQt6.QtGui import QPixmap
+from typing import Any, Dict, List, Optional, Union
 
 from vars_localize.util.utils import extract_bounding_boxes
-
-if TYPE_CHECKING:
-    from vars_localize.ui.BoundingBox import SourceBoundingBox
 
 
 @dataclass
@@ -53,8 +48,8 @@ class ObservationEntry:
     concept: str
     observer: str
     associations: List[AssociationEntry] = field(default_factory=list)
-    boxes: List[SourceBoundingBox] = field(default_factory=list)
-    video_boxes: List[SourceBoundingBox] = field(default_factory=list)
+    boxes: List[Dict[str, Any]] = field(default_factory=list)
+    video_boxes: List[Dict[str, Any]] = field(default_factory=list)
     status: int = 0
     raw: Dict[str, Any] = field(default_factory=dict)
     box_manager: Any = None
@@ -80,9 +75,11 @@ class ObservationEntry:
         boxes = [
             box
             for box in source_boxes
-            if box.image_reference_uuid == image_reference_uuid
+            if box.get("image_reference_uuid") == image_reference_uuid
         ]
-        video_boxes = [box for box in source_boxes if box.image_reference_uuid is None]
+        video_boxes = [
+            box for box in source_boxes if box.get("image_reference_uuid") is None
+        ]
 
         return cls(
             uuid=uuid,
@@ -117,7 +114,7 @@ class ImagedMomentEntry:
     ancillary_data: Dict[str, Any] = field(default_factory=dict)
     status: str = "unknown"
     raw: Dict[str, Any] = field(default_factory=dict)
-    cached_image: Optional[QPixmap] = None
+    cached_image: Any = None
     video_data: Optional[Dict[str, Any]] = None
 
     @classmethod

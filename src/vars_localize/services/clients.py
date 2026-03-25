@@ -4,14 +4,15 @@ Each client encapsulates endpoint paths and request behavior for one backend
 service so M3Service can remain an orchestration/facade layer.
 """
 
+from __future__ import annotations
+
 import json
 from typing import Any, Dict, List, Optional
 
 import requests
 
-from vars_localize.util.logging import get_logger
-
-logger = get_logger("M3Clients")
+from vars_localize.services.errors import ServiceAuthError, ServiceValidationError
+from vars_localize.services.http import request_with_policy
 
 
 class AnnosaurusClient:
@@ -25,25 +26,26 @@ class AnnosaurusClient:
 
     OBSERVATION = "/annotations"
     ASSOCIATION = "/associations"
-    FAST_SEARCH = "/fast/concept/images"
-    IMAGE_COUNT = "/observations/concept/images/count"
     IMAGED_MOMENT = "/imagedmoments"
-    WINDOW_REQUEST = "/imagedmoments/windowrequest"
-    ALL_CONCEPTS_USED = "/observations/concepts"
     DELETE_OBSERVATION = "/observations"
     IMAGED_MOMENTS_BY_CONCEPT = "/fast/imagedmoments/concept/images"
     IMAGED_MOMENTS_BY_IMAGE_REFERENCE = "/annotations/imagereference"
     ANNOTATIONS_BY_VIDEO_REFERENCE = "/fast/videoreference"
 
-    def __init__(self, endpoint: Dict[str, Any]):
+    def __init__(
+        self,
+        endpoint: Dict[str, Any],
+        session: Optional[requests.Session] = None,
+    ):
         """Initialize the client from Raziel endpoint metadata.
 
         Args:
             endpoint: Endpoint metadata containing at least `url` and `secret`.
+            session: Optional shared requests session.
         """
         self._base_url = endpoint["url"].rstrip("/")
         self._secret = endpoint["secret"]
-        self._session = requests.Session()
+        self._session = session or requests.Session()
 
     def _url(self, path: str) -> str:
         """Build an absolute URL for this service.
@@ -56,34 +58,35 @@ class AnnosaurusClient:
         """
         return self._base_url + path
 
+    def _request(self, method: str, path: str, **kwargs) -> requests.Response:
+        """Execute a request using the shared HTTP policy."""
+        return request_with_policy(self._session, method, self._url(path), **kwargs)
+
     def authenticate(self) -> None:
         """Authenticate against annosaurus and install a bearer token.
 
         Raises:
-            RuntimeError: If authentication fails.
+            ServiceAuthError: If auth response does not include access token.
+            ServiceRequestError: On HTTP transport/response failures.
         """
-        try:
-            response = self._session.post(
-                self._url("/auth"),
-                headers={"Authorization": "APIKEY {}".format(self._secret)},
-            )
-            response.raise_for_status()
-
-            token = response.json()["access_token"]
-            # Keep auth state in the session so all subsequent requests reuse it.
-            self._session.headers.update({"Authorization": "BEARER " + token})
-        except Exception as exc:
-            logger.exception("Authentication failed: {}", exc)
-            raise RuntimeError("Failed to authenticate with Annosaurus.") from exc
+        response = self._request(
+            "post",
+            "/auth",
+            headers={"Authorization": "APIKEY {}".format(self._secret)},
+        )
+        token = response.json().get("access_token")
+        if not token:
+            raise ServiceAuthError("Annosaurus auth response missing access_token")
+        self._session.headers.update({"Authorization": "BEARER " + token})
 
     def _require_auth(self) -> None:
         """Guard methods that require annosaurus JWT auth.
 
         Raises:
-            Exception: If the client has not been authenticated yet.
+            ServiceAuthError: If client has not yet authenticated.
         """
         if "Authorization" not in self._session.headers:
-            raise Exception("Session must be authenticated")
+            raise ServiceAuthError("Session must be authenticated")
 
     def get_imaged_moment_uuids(self, concept: str) -> List[str]:
         """Return imaged moment UUIDs for a concept.
@@ -95,10 +98,9 @@ class AnnosaurusClient:
             List of imaged moment UUID strings.
         """
         self._require_auth()
-        response = self._session.get(
-            self._url(self.IMAGED_MOMENTS_BY_CONCEPT + "/" + concept)
-        )
-        return response.json()
+        response = self._request("get", self.IMAGED_MOMENTS_BY_CONCEPT + "/" + concept)
+        payload = response.json()
+        return payload if isinstance(payload, list) else []
 
     def get_imaged_moment(self, imaged_moment_uuid: str) -> Dict[str, Any]:
         """Return imaged moment details by UUID.
@@ -110,88 +112,64 @@ class AnnosaurusClient:
             Parsed JSON payload.
         """
         self._require_auth()
-        response = self._session.get(
-            self._url(self.IMAGED_MOMENT + "/" + imaged_moment_uuid)
-        )
-        return response.json()
+        response = self._request("get", self.IMAGED_MOMENT + "/" + imaged_moment_uuid)
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
 
     def get_imaged_moments_by_image_reference(
         self, image_reference_uuid: str
-    ) -> Optional[Any]:
+    ) -> List[Dict[str, Any]]:
         """Return imaged moments linked to an image reference UUID.
 
         Args:
             image_reference_uuid: Image reference UUID.
 
         Returns:
-            Parsed JSON payload, or None when request/logged failure occurs.
+            Parsed JSON payload list.
         """
-        try:
-            response = self._session.get(
-                self._url(
-                    self.IMAGED_MOMENTS_BY_IMAGE_REFERENCE + "/" + image_reference_uuid
-                )
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as exc:
-            logger.warning(
-                "Could not fetch imaged moment data for image reference {}".format(
-                    image_reference_uuid
-                ),
-            )
-            logger.exception("Image reference lookup failed: {}", exc)
+        self._require_auth()
+        response = self._request(
+            "get",
+            self.IMAGED_MOMENTS_BY_IMAGE_REFERENCE + "/" + image_reference_uuid,
+        )
+        payload = response.json()
+        return payload if isinstance(payload, list) else []
 
     def get_annotations_by_video_reference(
         self, video_reference_uuid: str
-    ) -> Optional[Any]:
+    ) -> List[Dict[str, Any]]:
         """Return annotations for a video reference UUID.
 
         Args:
             video_reference_uuid: Video reference UUID.
 
         Returns:
-            Parsed JSON payload, or None when request/logged failure occurs.
+            Parsed JSON payload list.
         """
-        try:
-            response = self._session.get(
-                self._url(
-                    self.ANNOTATIONS_BY_VIDEO_REFERENCE + "/" + video_reference_uuid
-                ),
-                params={"data": True},
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as exc:
-            logger.warning(
-                "Could not fetch annotation data for video reference {}".format(
-                    video_reference_uuid
-                ),
-            )
-            logger.exception("Video reference annotation lookup failed: {}", exc)
+        self._require_auth()
+        response = self._request(
+            "get",
+            self.ANNOTATIONS_BY_VIDEO_REFERENCE + "/" + video_reference_uuid,
+            params={"data": True},
+        )
+        payload = response.json()
+        return payload if isinstance(payload, list) else []
 
-    def delete_observation(self, observation_uuid: str) -> Optional[requests.Response]:
+    def delete_observation(self, observation_uuid: str) -> requests.Response:
         """Delete an observation by UUID.
 
         Args:
             observation_uuid: Observation UUID.
 
         Returns:
-            Response on success, or None when request/logged failure occurs.
+            Response on success.
         """
         self._require_auth()
-        try:
-            response = self._session.delete(
-                self._url(self.DELETE_OBSERVATION + "/" + observation_uuid)
-            )
-            response.raise_for_status()
-            return response
-        except Exception as exc:
-            logger.exception("Observation deletion failed: {}", exc)
+        return self._request("delete", self.DELETE_OBSERVATION + "/" + observation_uuid)
 
     def rename_observation(
         self, observation_uuid: str, new_concept: str, observer: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """Rename an observation to a new concept.
 
         Args:
@@ -200,19 +178,17 @@ class AnnosaurusClient:
             observer: Observer identifier.
 
         Returns:
-            Parsed JSON payload, or None when request/logged failure occurs.
+            Parsed JSON payload.
         """
         self._require_auth()
         request_data = {"concept": new_concept, "observer": observer}
-        try:
-            response = self._session.put(
-                self._url(self.OBSERVATION + "/" + observation_uuid),
-                data=request_data,
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as exc:
-            logger.exception("Concept rename failed: {}", exc)
+        response = self._request(
+            "put",
+            self.OBSERVATION + "/" + observation_uuid,
+            data=request_data,
+        )
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
 
     def create_observation(
         self,
@@ -222,7 +198,7 @@ class AnnosaurusClient:
         timecode: Optional[str] = None,
         elapsed_time_millis: Optional[int] = None,
         recorded_timestamp: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """Create an observation with one of the accepted time index fields.
 
         Args:
@@ -234,7 +210,10 @@ class AnnosaurusClient:
             recorded_timestamp: Optional recorded timestamp.
 
         Returns:
-            Parsed JSON payload, or None when validation/request failure occurs.
+            Parsed JSON payload.
+
+        Raises:
+            ServiceValidationError: If no temporal index is provided.
         """
         self._require_auth()
         request_data: Dict[str, Any] = {
@@ -245,32 +224,28 @@ class AnnosaurusClient:
             "group": "ROV:training-set",
         }
 
-        if not (timecode or elapsed_time_millis or recorded_timestamp):
-            logger.error("No observation index provided. Observation creation failed.")
-            return None
+        if not (timecode or elapsed_time_millis is not None or recorded_timestamp):
+            raise ServiceValidationError(
+                "No observation index provided (timecode, elapsed_time_millis, or recorded_timestamp is required)."
+            )
 
         if timecode:
             request_data["timecode"] = timecode
-        if elapsed_time_millis:
+        if elapsed_time_millis is not None:
             request_data["elapsed_time_millis"] = int(elapsed_time_millis)
         if recorded_timestamp:
             request_data["recorded_timestamp"] = recorded_timestamp
 
-        try:
-            response = self._session.post(
-                self._url(self.OBSERVATION), data=request_data
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as exc:
-            logger.exception("Observation creation failed: {}", exc)
+        response = self._request("post", self.OBSERVATION, data=request_data)
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
 
     def create_box(
         self,
         box_json: Dict[str, Any],
         observation_uuid: str,
         to_concept: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """Create a bounding-box association for an observation.
 
         Args:
@@ -279,27 +254,21 @@ class AnnosaurusClient:
             to_concept: Optional target concept for association.
 
         Returns:
-            Parsed JSON payload, or None when request/logged failure occurs.
+            Parsed JSON payload.
         """
         self._require_auth()
-        request_data = {
+        request_data: Dict[str, Any] = {
             "observation_uuid": observation_uuid,
             "link_name": "bounding box",
             "link_value": json.dumps(box_json),
             "mime_type": "application/json",
         }
-
         if to_concept is not None:
             request_data["to_concept"] = to_concept
 
-        try:
-            response = self._session.post(
-                self._url(self.ASSOCIATION), data=request_data
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as exc:
-            logger.exception("Box creation failed: {}", exc)
+        response = self._request("post", self.ASSOCIATION, data=request_data)
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
 
     def modify_box(
         self,
@@ -307,7 +276,7 @@ class AnnosaurusClient:
         observation_uuid: str,
         association_uuid: str,
         to_concept: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """Modify an existing bounding-box association.
 
         Args:
@@ -317,47 +286,37 @@ class AnnosaurusClient:
             to_concept: Optional target concept for association.
 
         Returns:
-            Parsed JSON payload, or None when request/logged failure occurs.
+            Parsed JSON payload.
         """
         self._require_auth()
-        request_data = {
+        request_data: Dict[str, Any] = {
             "observation_uuid": observation_uuid,
             "link_name": "bounding box",
             "link_value": json.dumps(box_json),
             "mime_type": "application/json",
         }
-
         if to_concept is not None:
             request_data["to_concept"] = to_concept
 
-        try:
-            response = self._session.put(
-                self._url(self.ASSOCIATION + "/" + association_uuid),
-                data=request_data,
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as exc:
-            logger.exception("Box modification failed: {}", exc)
+        response = self._request(
+            "put",
+            self.ASSOCIATION + "/" + association_uuid,
+            data=request_data,
+        )
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
 
-    def delete_box(self, association_uuid: str) -> Optional[requests.Response]:
+    def delete_box(self, association_uuid: str) -> requests.Response:
         """Delete a bounding-box association by UUID.
 
         Args:
             association_uuid: Association UUID.
 
         Returns:
-            Response on success, or None when request/logged failure occurs.
+            Response on success.
         """
         self._require_auth()
-        try:
-            response = self._session.delete(
-                self._url(self.ASSOCIATION + "/" + association_uuid)
-            )
-            response.raise_for_status()
-            return response
-        except Exception as exc:
-            logger.exception("Box deletion failed: {}", exc)
+        return self._request("delete", self.ASSOCIATION + "/" + association_uuid)
 
 
 class OniClient:
@@ -397,15 +356,19 @@ class OniClient:
         """
         return self._base_url + path
 
+    def _request(self, method: str, path: str, **kwargs) -> requests.Response:
+        """Execute a request using the shared HTTP policy."""
+        return request_with_policy(self._session, method, self._url(path), **kwargs)
+
     def get_all_users(self) -> List[Dict[str, Any]]:
         """Return all users.
 
         Returns:
             User records returned by oni.
         """
-        response = self._session.get(self._url(self.ALL_USERS))
-        response.raise_for_status()
-        return response.json()
+        response = self._request("get", self.ALL_USERS)
+        payload = response.json()
+        return payload if isinstance(payload, list) else []
 
     def get_all_concepts(self) -> List[str]:
         """Return all concepts with in-memory caching.
@@ -414,9 +377,9 @@ class OniClient:
             Concept names.
         """
         if self._kb_concepts is None:
-            response = self._session.get(self._url(self.ALL_CONCEPTS))
-            response.raise_for_status()
-            self._kb_concepts = response.json()
+            response = self._request("get", self.ALL_CONCEPTS)
+            payload = response.json()
+            self._kb_concepts = payload if isinstance(payload, list) else []
         return self._kb_concepts
 
     def get_all_parts(self) -> List[str]:
@@ -426,9 +389,10 @@ class OniClient:
             Organism part names.
         """
         if self._kb_parts is None:
-            response = self._session.get(self._url(self.ALL_PARTS))
-            response.raise_for_status()
-            self._kb_parts = [entry["name"] for entry in response.json()]
+            response = self._request("get", self.ALL_PARTS)
+            payload = response.json()
+            rows = payload if isinstance(payload, list) else []
+            self._kb_parts = [entry["name"] for entry in rows if "name" in entry]
         return self._kb_parts
 
 
@@ -466,51 +430,39 @@ class VampireSquidClient:
         """
         return self._base_url + path
 
-    def get_video_data(self, video_reference_uuid: str) -> Optional[Any]:
+    def _request(self, method: str, path: str, **kwargs) -> requests.Response:
+        """Execute a request using the shared HTTP policy."""
+        return request_with_policy(self._session, method, self._url(path), **kwargs)
+
+    def get_video_data(self, video_reference_uuid: str) -> Dict[str, Any]:
         """Return video metadata for a video reference UUID.
 
         Args:
             video_reference_uuid: Video reference UUID.
 
         Returns:
-            Parsed JSON payload, or None when request/logged failure occurs.
+            Parsed JSON payload.
         """
-        try:
-            response = self._session.get(
-                self._url(self.VIDEO_DATA + "/" + video_reference_uuid)
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as exc:
-            logger.warning("Could not fetch video data for {}", video_reference_uuid)
-            logger.exception("Video data fetch failed: {}", exc)
+        response = self._request("get", self.VIDEO_DATA + "/" + video_reference_uuid)
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {}
 
     def get_video_by_video_reference_uuid(
         self, video_reference_uuid: str
-    ) -> Optional[Any]:
+    ) -> Dict[str, Any]:
         """Return video payload by reference UUID, normalizing list responses.
 
         Args:
             video_reference_uuid: Video reference UUID.
 
         Returns:
-            Parsed JSON payload, or None when request/logged failure occurs.
+            Parsed JSON payload.
         """
-        try:
-            response = self._session.get(
-                self._url(
-                    self.VIDEO_BY_VIDEO_REFERENCE_UUID + "/" + video_reference_uuid
-                )
-            )
-            response.raise_for_status()
-
-            response_parsed = response.json()
-            if isinstance(response_parsed, list):
-                return response_parsed[0]
-            return response_parsed
-        except Exception as exc:
-            logger.warning(
-                "Could not fetch video data for video reference {}",
-                video_reference_uuid,
-            )
-            logger.exception("Video-by-reference fetch failed: {}", exc)
+        response = self._request(
+            "get",
+            self.VIDEO_BY_VIDEO_REFERENCE_UUID + "/" + video_reference_uuid,
+        )
+        response_parsed = response.json()
+        if isinstance(response_parsed, list):
+            return response_parsed[0] if response_parsed else {}
+        return response_parsed if isinstance(response_parsed, dict) else {}

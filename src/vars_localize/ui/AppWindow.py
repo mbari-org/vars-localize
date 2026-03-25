@@ -70,11 +70,7 @@ class AppWindow(QMainWindow):
         self._state.conceptChanged.connect(self._sync_concept_state)
         self._state.uuidsChanged.connect(self._sync_result_count)
 
-        try:
-            self.login()
-        except RuntimeError as exc:
-            logger.error("{}", exc)
-            exit(1)
+        self.login()
 
         self.central_container = QWidget()
         self.central_container.setLayout(QHBoxLayout())
@@ -110,6 +106,9 @@ class AppWindow(QMainWindow):
         )
         self.display_panel.image_view.select_next = self.search_panel.select_next
         self.display_panel.image_view.select_prev = self.search_panel.select_prev
+        self.display_panel.image_view.set_observation_select_callback(
+            self.search_panel.select_entry
+        )
 
         self.search_panel.observer = self.observer
 
@@ -202,7 +201,7 @@ class AppWindow(QMainWindow):
     def login(self) -> None:
         """Prompt for observer login and configure user state."""
         login_dialog = LoginDialog(parent=self, default_m3_url=self._settings.m3_url)
-        login_dialog._login_form._username_line_edit.setFocus()
+        login_dialog.focus_username()
         login_dialog.adjustSize()
         center_window(login_dialog, self)
 

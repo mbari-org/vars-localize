@@ -1,20 +1,25 @@
 """Service facade around M3 utility functions."""
 
+from __future__ import annotations
+
 from base64 import b64encode
 from typing import Any, Dict, List, Optional
 
 import requests
-from PyQt6.QtGui import QPixmap
 
 from vars_localize.services.clients import (
     AnnosaurusClient,
     OniClient,
     VampireSquidClient,
 )
-from vars_localize.util.logging import get_logger
+from vars_localize.services.errors import (
+    ServiceAuthError,
+    ServiceNotConfiguredError,
+    ServiceRequestError,
+)
+from vars_localize.services.http import request_with_policy
 
 DEFAULT_M3_URL = "https://m3.shore.mbari.org/config"
-logger = get_logger("M3Service")
 
 
 class M3Service:
@@ -51,6 +56,12 @@ class M3Service:
         """
         return self._m3_url
 
+    def _request(self, method: str, path: str, **kwargs) -> requests.Response:
+        """Issue request to M3 config service using shared HTTP policy."""
+        return request_with_policy(
+            self._default_session, method, self._m3_url + path, **kwargs
+        )
+
     def check_connection(self, timeout_secs: int = 3) -> None:
         """Ensure the M3 config service responds to /health.
 
@@ -58,18 +69,11 @@ class M3Service:
             timeout_secs: Timeout in seconds.
 
         Raises:
-            ConnectionError: If the health check fails or returns a non-200 response.
+            ServiceRequestError: If health check fails after retries.
         """
-        try:
-            r = self._default_session.get(
-                self._m3_url + "/health", timeout=max(1, int(timeout_secs))
-            )
-            if r.status_code != 200:
-                raise ConnectionError(
-                    "M3 health check failed with status code {}.".format(r.status_code)
-                )
-        except requests.RequestException as e:
-            raise ConnectionError("Connection check failed: {}".format(e)) from e
+        self._request(
+            "get", "/health", timeout_secs=max(1, int(timeout_secs)), retries=1
+        )
 
     def _fetch_endpoints(self, username: str, password: str) -> None:
         """Authenticate with Raziel and populate endpoint metadata.
@@ -79,30 +83,39 @@ class M3Service:
             password: Raziel password.
 
         Raises:
-            Exception: If Raziel authentication fails.
+            ServiceAuthError: If auth succeeds but token payload is invalid.
+            ServiceRequestError: On transport/HTTP failures.
         """
-        # Raziel expects HTTP Basic credentials for the auth token request.
         user_pass_base64 = "Basic " + b64encode(
             "{}:{}".format(username, password).encode("utf-8")
         ).decode("utf-8")
 
-        res = requests.post(
-            self._m3_url + "/auth", headers={"Authorization": user_pass_base64}
+        auth_res = self._request(
+            "post",
+            "/auth",
+            headers={"Authorization": user_pass_base64},
         )
-        if res.status_code != 200:
-            raise Exception(
-                "Failed to authenticate with Raziel (code {}): {}".format(
-                    res.status_code, res.json()["message"]
-                )
+        token = auth_res.json().get("accessToken")
+        if not token:
+            raise ServiceAuthError("Raziel auth response missing accessToken")
+
+        endpoint_res = self._request(
+            "get",
+            "/endpoints",
+            headers={"Authorization": "Bearer " + token},
+        )
+        endpoints = endpoint_res.json()
+        if not isinstance(endpoints, list):
+            raise ServiceRequestError(
+                message="Invalid endpoint discovery response payload",
+                method="get",
+                url=self._m3_url + "/endpoints",
             )
 
-        token = res.json()["accessToken"]
         self._endpoints = {
             endpoint["name"]: endpoint
-            for endpoint in requests.get(
-                self._m3_url + "/endpoints",
-                headers={"Authorization": "Bearer " + token},
-            ).json()
+            for endpoint in endpoints
+            if isinstance(endpoint, dict) and "name" in endpoint
         }
 
     def _get_endpoint(self, name: str) -> Dict[str, Any]:
@@ -115,12 +128,14 @@ class M3Service:
             Endpoint metadata.
 
         Raises:
-            Exception: If service is not configured or endpoint is missing.
+            ServiceNotConfiguredError: If service is not configured or endpoint is missing.
         """
         if self._endpoints is None:
-            raise Exception("You must call configure() before accessing endpoints.")
+            raise ServiceNotConfiguredError(
+                "You must call configure() before accessing endpoints."
+            )
         if name not in self._endpoints:
-            raise Exception("No endpoint named {}".format(name))
+            raise ServiceNotConfiguredError("No endpoint named {}".format(name))
         return self._endpoints[name]
 
     def _find_endpoint(self, *names: str) -> Optional[Dict[str, Any]]:
@@ -133,10 +148,12 @@ class M3Service:
             Endpoint metadata for the first match, else None.
 
         Raises:
-            Exception: If service is not configured.
+            ServiceNotConfiguredError: If service is not configured.
         """
         if self._endpoints is None:
-            raise Exception("You must call configure() before accessing endpoints.")
+            raise ServiceNotConfiguredError(
+                "You must call configure() before accessing endpoints."
+            )
         for name in names:
             endpoint = self._endpoints.get(name)
             if endpoint is not None:
@@ -151,17 +168,19 @@ class M3Service:
             password: Raziel password.
 
         Raises:
-            RuntimeError: If required endpoints are missing or auth fails.
+            ServiceNotConfiguredError: If required endpoints are missing.
+            ServiceAuthError: If downstream authentication fails.
+            ServiceRequestError: If endpoint discovery fails.
         """
         self._fetch_endpoints(username, password)
 
         annosaurus_endpoint = self._get_endpoint(AnnosaurusClient.SERVICE_NAME)
         oni_endpoint = self._find_endpoint(OniClient.SERVICE_NAME)
         if oni_endpoint is None:
-            raise RuntimeError("No endpoint named oni")
+            raise ServiceNotConfiguredError("No endpoint named oni")
         vampire_squid_endpoint = self._get_endpoint(VampireSquidClient.SERVICE_NAME)
 
-        self._annosaurus = AnnosaurusClient(annosaurus_endpoint)
+        self._annosaurus = AnnosaurusClient(annosaurus_endpoint, self._default_session)
         self._oni = OniClient(oni_endpoint, self._default_session)
         self._vampire_squid = VampireSquidClient(
             vampire_squid_endpoint, self._default_session
@@ -173,10 +192,10 @@ class M3Service:
         """Ensure configure() has been completed before API usage.
 
         Raises:
-            Exception: If clients are not initialized.
+            ServiceNotConfiguredError: If clients are not initialized.
         """
         if self._annosaurus is None or self._oni is None or self._vampire_squid is None:
-            raise Exception("Service must be configured")
+            raise ServiceNotConfiguredError("Service must be configured")
 
     def _annosaurus_client(self) -> AnnosaurusClient:
         """Return configured annosaurus client.
@@ -248,14 +267,14 @@ class M3Service:
 
     def get_imaged_moments_by_image_reference(
         self, image_reference_uuid: str
-    ) -> Optional[Any]:
+    ) -> List[Dict[str, Any]]:
         """Compatibility wrapper for image-reference lookup.
 
         Args:
             image_reference_uuid: Image reference UUID.
 
         Returns:
-            Parsed payload or None when downstream call fails.
+            Parsed payload list.
         """
         return self._annosaurus_client().get_imaged_moments_by_image_reference(
             image_reference_uuid
@@ -263,33 +282,33 @@ class M3Service:
 
     def get_annotations_by_video_reference(
         self, video_reference_uuid: str
-    ) -> Optional[Any]:
+    ) -> List[Dict[str, Any]]:
         """Compatibility wrapper for video-reference annotation lookup.
 
         Args:
             video_reference_uuid: Video reference UUID.
 
         Returns:
-            Parsed payload or None when downstream call fails.
+            Parsed payload list.
         """
         return self._annosaurus_client().get_annotations_by_video_reference(
             video_reference_uuid
         )
 
-    def delete_observation(self, observation_uuid: str) -> Optional[requests.Response]:
+    def delete_observation(self, observation_uuid: str) -> requests.Response:
         """Compatibility wrapper for observation deletion.
 
         Args:
             observation_uuid: Observation UUID.
 
         Returns:
-            Response on success, else None.
+            Response on success.
         """
         return self._annosaurus_client().delete_observation(observation_uuid)
 
     def rename_observation(
         self, observation_uuid: str, new_concept: str, observer: str
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """Compatibility wrapper for observation rename.
 
         Args:
@@ -298,7 +317,7 @@ class M3Service:
             observer: Observer identifier.
 
         Returns:
-            Parsed payload or None.
+            Parsed payload.
         """
         return self._annosaurus_client().rename_observation(
             observation_uuid, new_concept, observer
@@ -312,7 +331,7 @@ class M3Service:
         timecode: Optional[str] = None,
         elapsed_time_millis: Optional[int] = None,
         recorded_timestamp: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """Compatibility wrapper for observation creation.
 
         Args:
@@ -324,7 +343,7 @@ class M3Service:
             recorded_timestamp: Optional recorded timestamp.
 
         Returns:
-            Parsed payload or None.
+            Parsed payload.
         """
         return self._annosaurus_client().create_observation(
             video_reference_uuid,
@@ -340,7 +359,7 @@ class M3Service:
         box_json: Dict[str, Any],
         observation_uuid: str,
         to_concept: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """Compatibility wrapper for bounding-box creation.
 
         Args:
@@ -349,7 +368,7 @@ class M3Service:
             to_concept: Optional target concept.
 
         Returns:
-            Parsed payload or None.
+            Parsed payload.
         """
         return self._annosaurus_client().create_box(
             box_json, observation_uuid, to_concept
@@ -361,7 +380,7 @@ class M3Service:
         observation_uuid: str,
         association_uuid: str,
         to_concept: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """Compatibility wrapper for bounding-box modification.
 
         Args:
@@ -371,40 +390,34 @@ class M3Service:
             to_concept: Optional target concept.
 
         Returns:
-            Parsed payload or None.
+            Parsed payload.
         """
         return self._annosaurus_client().modify_box(
             box_json, observation_uuid, association_uuid, to_concept
         )
 
-    def delete_box(self, association_uuid: str) -> Optional[requests.Response]:
+    def delete_box(self, association_uuid: str) -> requests.Response:
         """Compatibility wrapper for bounding-box deletion.
 
         Args:
             association_uuid: Association UUID.
 
         Returns:
-            Response on success, else None.
+            Response on success.
         """
         return self._annosaurus_client().delete_box(association_uuid)
 
-    def fetch_image(self, url: str) -> Optional[QPixmap]:
-        """Fetch an image URL and convert it into a QPixmap.
+    def fetch_image_bytes(self, url: str) -> bytes:
+        """Fetch image bytes from a URL.
 
         Args:
             url: Image URL.
 
         Returns:
-            QPixmap on success, else None.
+            Raw response bytes.
         """
-        try:
-            response = self._default_session.get(url)
-            response.raise_for_status()
-            pixmap = QPixmap()
-            pixmap.loadFromData(response.content)
-            return pixmap
-        except Exception:
-            logger.warning("Could not fetch image at {}", url)
+        response = request_with_policy(self._default_session, "get", url)
+        return response.content
 
     def get_all_parts(self) -> List[str]:
         """Compatibility wrapper for OniClient.get_all_parts.
@@ -414,27 +427,27 @@ class M3Service:
         """
         return self._oni_client().get_all_parts()
 
-    def get_video_data(self, video_reference_uuid: str) -> Optional[Any]:
+    def get_video_data(self, video_reference_uuid: str) -> Dict[str, Any]:
         """Compatibility wrapper for VampireSquidClient.get_video_data.
 
         Args:
             video_reference_uuid: Video reference UUID.
 
         Returns:
-            Parsed payload or None.
+            Parsed payload.
         """
         return self._vampire_squid_client().get_video_data(video_reference_uuid)
 
     def get_video_by_video_reference_uuid(
         self, video_reference_uuid: str
-    ) -> Optional[Any]:
+    ) -> Dict[str, Any]:
         """Compatibility wrapper for VampireSquidClient.get_video_by_video_reference_uuid.
 
         Args:
             video_reference_uuid: Video reference UUID.
 
         Returns:
-            Parsed payload or None.
+            Parsed payload.
         """
         return self._vampire_squid_client().get_video_by_video_reference_uuid(
             video_reference_uuid

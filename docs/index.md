@@ -1,5 +1,7 @@
 # VARS Localize Documentation
 
+![VARS Localize logo](images/branding/vars-localize-logo.png){ width="220" }
+
 VARS Localize is a PyQt desktop application for creating and editing observation localizations (bounding boxes) in VARS.
 
 This documentation is organized for:

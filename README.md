@@ -27,6 +27,11 @@ To start the application, run:
 vars-localize
 ```
 
+On Linux, you can also install a user desktop launcher and icons:
+```bash
+vars-localize install-desktop
+```
+
 Once the application launches, enter your M3 URL, then log in with your VARS username and password.
 
 For complete setup, workflows, UI guidance, and SAM3 details, see:

@@ -8,6 +8,8 @@ docs_dir: docs
 
 theme:
   name: material
+  logo: images/branding/vars-localize-logo.png
+  favicon: images/branding/favicon.png
   features:
     - navigation.instant
     - navigation.indexes

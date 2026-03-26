@@ -42,6 +42,20 @@ vars-localize
 
 You should see the login dialog first.
 
+## Linux Desktop Entry (Optional)
+
+To install a user-level desktop launcher and icons on Linux:
+
+```bash
+vars-localize install-desktop
+```
+
+To remove the desktop launcher and icons:
+
+```bash
+vars-localize uninstall-desktop
+```
+
 <!-- ### Screenshot Placeholder: Login Dialog On Startup
 
 ![Login dialog on startup placeholder](../images/screenshots/login-dialog-initial.png) -->

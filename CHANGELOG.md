@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.4.0 (2026-03-26)
+
+### Features
+
+- Add logo to app & docs, post-install command for Desktop file (Linux)
+  ([`ee9c8d8`](https://github.com/mbari-org/vars-localize/commit/ee9c8d89ccbfefe4f3c5f9900220b1591f7df05d))
+
+
 ## v0.3.0 (2026-03-25)
 
 ### Chores

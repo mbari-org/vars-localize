@@ -1,6 +1,15 @@
 # CHANGELOG
 
 
+## v0.4.1 (2026-04-06)
+
+### Bug Fixes
+
+- Handle GPU OOM, add settings to enable/disable semantic vs. point SAM3 modes, optimize image view
+  redraw
+  ([`72f83f3`](https://github.com/mbari-org/vars-localize/commit/72f83f3a51063d89d401d9d2151fcf4a462465f3))
+
+
 ## v0.4.0 (2026-03-26)
 
 ### Features

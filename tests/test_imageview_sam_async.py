@@ -169,6 +169,7 @@ def test_set_annotation_focus_triggers_sam_on_concept_change_only():
     view = ImageView.__new__(ImageView)
     view._active_annotation_concept = None
     view._sam_assist_enabled = True
+    view._sam_semantic_enabled = True
     view._sam_candidate_boxes = []
     view._sam_hover_box = None
     view._sam_pending_concept = None
@@ -264,3 +265,164 @@ def test_accept_sam_candidate_deselects_observation_and_preserves_sam_state():
     assert calls["focus"] == [("fish", None)]
     assert calls["reload"] == [True]
     assert calls["redraw"] == 1
+
+
+def test_sam_embedding_cuda_oom_pauses_retries(monkeypatch):
+    from vars_localize.ui.ImageView import ImageView
+
+    run_calls = {"count": 0}
+    statuses = []
+    moment_uuid = "moment-1"
+
+    def fake_run_async(
+        _owner,
+        _fn,
+        *args,
+        on_result=None,
+        on_error=None,
+        on_finished=None,
+        **kwargs,
+    ):
+        _ = (on_result, args, kwargs)
+        run_calls["count"] += 1
+        if on_error is not None:
+            on_error(RuntimeError("CUDA out of memory. Tried to allocate 40.00 MiB"))
+        if on_finished is not None:
+            on_finished()
+
+    monkeypatch.setattr("vars_localize.ui.ImageView.run_async", fake_run_async)
+
+    view = ImageView.__new__(ImageView)
+    view._sam_assist_enabled = True
+    view.moment = SimpleNamespace(imaged_moment=SimpleNamespace(uuid=moment_uuid))
+    view.pixmap_src = object()
+    view.sam3_service = SimpleNamespace(available=True)
+    view._sam_ready_image_uuid = None
+    view._sam_embedding_busy = False
+    view._sam_embedding_request_uuid = None
+    view._sam_failed_image_uuid = None
+    view._sam_last_error_message = None
+    view._sam_pending_concept = None
+    view._notify_sam_status = lambda status: statuses.append(status)
+    view._pixmap_to_rgb_ndarray = lambda _pixmap: object()
+
+    view._maybe_start_sam_embedding()
+
+    assert run_calls["count"] == 1
+    assert view._sam_embedding_busy is False
+    assert view._sam_failed_image_uuid == moment_uuid
+    assert view._sam_last_error_message == "SAM embedding failed (GPU out of memory)"
+    assert statuses[-1] == "SAM embedding failed (GPU out of memory)"
+
+
+def test_semantic_mode_disabled_skips_concept_query(monkeypatch):
+    from vars_localize.ui.ImageView import ImageView
+
+    run_calls = {"count": 0}
+
+    def fake_run_async(*_args, **_kwargs):
+        run_calls["count"] += 1
+
+    monkeypatch.setattr("vars_localize.ui.ImageView.run_async", fake_run_async)
+
+    view = ImageView.__new__(ImageView)
+    view._sam_assist_enabled = True
+    view._sam_semantic_enabled = False
+    view._notify_sam_status = lambda _status: None
+    view._build_sam_status = lambda: "status"
+    view.moment = SimpleNamespace(imaged_moment=SimpleNamespace(uuid="moment-1"))
+
+    view._start_sam_candidates_for_concept("fish")
+
+    assert run_calls["count"] == 0
+
+
+def test_point_mode_disabled_skips_hover_query(monkeypatch):
+    from vars_localize.ui.ImageView import ImageView
+    from PyQt6.QtCore import QPoint
+    from PyQt6.QtCore import Qt
+
+    run_calls = {"count": 0}
+
+    def fake_run_async(*_args, **_kwargs):
+        run_calls["count"] += 1
+
+    monkeypatch.setattr("vars_localize.ui.ImageView.run_async", fake_run_async)
+
+    class FakeEvent:
+        def buttons(self):
+            return Qt.MouseButton.NoButton
+
+        def pos(self):
+            return QPoint(10, 10)
+
+    view = ImageView.__new__(ImageView)
+    view._sam_assist_enabled = True
+    view._sam_point_enabled = False
+    view.pixmap_src = SimpleNamespace(width=lambda: 100, height=lambda: 100)
+    view.moment = SimpleNamespace(imaged_moment=SimpleNamespace(uuid="moment-1"))
+    view.resize_type = None
+    view._sam_ready_image_uuid = "moment-1"
+    view.get_im_rel_point = lambda _pt: QPoint(10, 10)
+    view._sam_last_hover_point = None
+    view._sam_hover_inflight = False
+
+    view._maybe_update_hover_candidate(FakeEvent())
+
+    assert run_calls["count"] == 0
+
+
+def test_mouse_move_without_state_change_skips_full_redraw():
+    from vars_localize.ui.ImageView import ImageView
+    from PyQt6.QtCore import QPointF, QEvent, Qt
+    from PyQt6.QtGui import QMouseEvent, QPixmap
+    from PyQt6.QtWidgets import QApplication
+
+    _app = QApplication.instance() or QApplication([])
+
+    view = ImageView()
+    view.resize(1200, 700)
+    view.moment = SimpleNamespace(
+        imaged_moment=SimpleNamespace(
+            ancillary_data=None,
+            recorded_timestamp=None,
+            video_data=None,
+        )
+    )
+    view.enabled_observations = {}
+    view.observation_map = {}
+
+    pixmap = QPixmap(640, 360)
+    pixmap.fill()
+    view.set_pixmap(pixmap)
+    view.redraw()
+
+    redraw_calls = {"count": 0}
+    overlay_updates = {"count": 0}
+
+    original_overlay_update = view._update_mouse_overlay
+
+    def tracked_redraw():
+        redraw_calls["count"] += 1
+
+    def tracked_overlay_update():
+        overlay_updates["count"] += 1
+        original_overlay_update()
+
+    view.redraw = tracked_redraw
+    view._update_mouse_overlay = tracked_overlay_update
+
+    move_event = QMouseEvent(
+        QEvent.Type.MouseMove,
+        QPointF(150.0, 130.0),
+        QPointF(150.0, 130.0),
+        QPointF(150.0, 130.0),
+        Qt.MouseButton.NoButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+
+    view.mouseMoveEvent(move_event)
+
+    assert redraw_calls["count"] == 0
+    assert overlay_updates["count"] == 1

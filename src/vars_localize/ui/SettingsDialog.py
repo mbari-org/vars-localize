@@ -162,6 +162,8 @@ class SettingsDialog(QDialog):
             raise RuntimeError("Unexpected layout type")
 
         self.sam_enabled = QCheckBox("Enable SAM3 Assist")
+        self.sam_semantic_enabled = QCheckBox("Enable semantic text prompts")
+        self.sam_point_enabled = QCheckBox("Enable point prompts")
 
         model_row = QWidget()
         model_row.setLayout(QHBoxLayout())
@@ -196,6 +198,8 @@ class SettingsDialog(QDialog):
         self.sam_overlap_iou.setSingleStep(0.05)
 
         sam_form.addRow(self.sam_enabled)
+        sam_form.addRow(self.sam_semantic_enabled)
+        sam_form.addRow(self.sam_point_enabled)
         sam_form.addRow("Model file", model_row)
         sam_form.addRow("Confidence", self.sam_confidence)
         sam_form.addRow("Image size", self.sam_image_size)
@@ -229,6 +233,8 @@ class SettingsDialog(QDialog):
         self.connection_timeout_secs.setValue(self._settings.connection_timeout_secs)
 
         self.sam_enabled.setChecked(self._settings.sam3_enabled)
+        self.sam_semantic_enabled.setChecked(self._settings.sam3_semantic_enabled)
+        self.sam_point_enabled.setChecked(self._settings.sam3_point_enabled)
         self.sam_model_path.setText(self._settings.sam3_model_path)
         self.sam_confidence.setValue(self._settings.sam3_confidence)
         self.sam_image_size.setValue(self._settings.sam3_image_size)
@@ -248,6 +254,17 @@ class SettingsDialog(QDialog):
     def _save(self):
         model_path = self.sam_model_path.text().strip()
         if self.sam_enabled.isChecked():
+            if (
+                not self.sam_semantic_enabled.isChecked()
+                and not self.sam_point_enabled.isChecked()
+            ):
+                QMessageBox.warning(
+                    self,
+                    "SAM3 mode required",
+                    "Enable at least one SAM3 prompt mode (semantic or point).",
+                )
+                self.tabs.setCurrentWidget(self._sam_tab)
+                return
             if not model_path:
                 QMessageBox.warning(
                     self,
@@ -288,6 +305,8 @@ class SettingsDialog(QDialog):
         self._settings.connection_timeout_secs = self.connection_timeout_secs.value()
 
         self._settings.sam3_enabled = self.sam_enabled.isChecked()
+        self._settings.sam3_semantic_enabled = self.sam_semantic_enabled.isChecked()
+        self._settings.sam3_point_enabled = self.sam_point_enabled.isChecked()
         self._settings.sam3_model_path = model_path
         self._settings.sam3_confidence = self.sam_confidence.value()
         self._settings.sam3_image_size = self.sam_image_size.value()

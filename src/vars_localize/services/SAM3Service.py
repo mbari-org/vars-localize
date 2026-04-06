@@ -43,6 +43,8 @@ class SAM3Service:
         self._src_shape = None
         self._import_error = None
         self._missing_dependency_reported = False
+        self._semantic_mode_enabled = True
+        self._point_mode_enabled = True
 
     def _validate_model_path(self) -> Optional[Exception]:
         if not self._model:
@@ -95,9 +97,26 @@ class SAM3Service:
         else:
             self._import_error = self._validate_model_path()
 
-    def ensure_loaded(self) -> None:
+    def ensure_loaded(
+        self,
+        semantic_enabled: bool = True,
+        point_enabled: bool = True,
+    ) -> None:
         with self._predictor_lock:
-            if self.available:
+            semantic_enabled = bool(semantic_enabled)
+            point_enabled = bool(point_enabled)
+            if not semantic_enabled and not point_enabled:
+                self._cleanup_predictors()
+                self._semantic_mode_enabled = False
+                self._point_mode_enabled = False
+                self._import_error = None
+                return
+
+            if (
+                self.available
+                and self._semantic_mode_enabled == semantic_enabled
+                and self._point_mode_enabled == point_enabled
+            ):
                 return
 
             validation_error = self._validate_model_path()
@@ -107,7 +126,13 @@ class SAM3Service:
 
             try:
                 self._device = self._select_device()
-                self._build_predictors(self._device)
+                self._build_predictors(
+                    self._device,
+                    semantic_enabled=semantic_enabled,
+                    point_enabled=point_enabled,
+                )
+                self._semantic_mode_enabled = semantic_enabled
+                self._point_mode_enabled = point_enabled
                 self._import_error = None
                 return
             except ModuleNotFoundError as exc:
@@ -128,15 +153,23 @@ class SAM3Service:
                 logger.exception("SAM3 predictor initialization failed: {}", exc)
                 raise RuntimeError("SAM3 predictor initialization failed.") from exc
 
-    def _build_predictors(self, device: str):
+    def _build_predictors(
+        self,
+        device: str,
+        semantic_enabled: bool = True,
+        point_enabled: bool = True,
+    ):
         from ultralytics.models.sam import SAM3Predictor, SAM3SemanticPredictor
 
+        self._cleanup_predictors()
         overrides = self._make_overrides(device)
 
-        # Semantic predictor handles text grounding.
-        self._semantic_predictor = SAM3SemanticPredictor(overrides=dict(overrides))
-        # Interactive predictor handles point prompts.
-        self._point_predictor = SAM3Predictor(overrides=dict(overrides))
+        if semantic_enabled:
+            # Semantic predictor handles text grounding.
+            self._semantic_predictor = SAM3SemanticPredictor(overrides=dict(overrides))
+        if point_enabled:
+            # Interactive predictor handles point prompts.
+            self._point_predictor = SAM3Predictor(overrides=dict(overrides))
         self._predictor_ready = False
         self._device = device
 
@@ -179,15 +212,34 @@ class SAM3Service:
 
         return "cpu"
 
-    def _recreate_predictor(self, device: str):
+    def _recreate_predictor(
+        self,
+        device: str,
+        semantic_enabled: Optional[bool] = None,
+        point_enabled: Optional[bool] = None,
+    ):
         self._cleanup_predictors()
-        self._build_predictors(device)
+        self._build_predictors(
+            device,
+            semantic_enabled=self._semantic_mode_enabled
+            if semantic_enabled is None
+            else bool(semantic_enabled),
+            point_enabled=self._point_mode_enabled
+            if point_enabled is None
+            else bool(point_enabled),
+        )
 
     @property
     def available(self) -> bool:
-        return (
-            self._semantic_predictor is not None and self._point_predictor is not None
-        )
+        return self.semantic_available or self.point_available
+
+    @property
+    def semantic_available(self) -> bool:
+        return self._semantic_predictor is not None
+
+    @property
+    def point_available(self) -> bool:
+        return self._point_predictor is not None
 
     @property
     def availability_error(self) -> Optional[str]:
@@ -197,7 +249,7 @@ class SAM3Service:
 
     @property
     def point_predictor_loaded(self) -> bool:
-        return self.available
+        return self.point_available
 
     @property
     def point_predictor_ready(self) -> bool:
@@ -205,11 +257,11 @@ class SAM3Service:
 
     @property
     def point_predictor_init_failed(self) -> bool:
-        return not self.available and self._import_error is not None
+        return not self.point_available and self._import_error is not None
 
     @property
     def point_prompt_state(self) -> str:
-        if not self.available:
+        if not self.point_available:
             return "unavailable"
         if self._predictor_ready:
             return "ready"
@@ -224,8 +276,10 @@ class SAM3Service:
             semantic_predictor = cast(Any, self._semantic_predictor)
             point_predictor = cast(Any, self._point_predictor)
             try:
-                semantic_predictor.set_image(image_rgb)
-                point_predictor.set_image(image_rgb)
+                if semantic_predictor is not None:
+                    semantic_predictor.set_image(image_rgb)
+                if point_predictor is not None:
+                    point_predictor.set_image(image_rgb)
             except Exception as exc:
                 message = str(exc)
                 if self._device != "cpu" and (
@@ -239,22 +293,29 @@ class SAM3Service:
                     self._recreate_predictor("cpu")
                     semantic_predictor = cast(Any, self._semantic_predictor)
                     point_predictor = cast(Any, self._point_predictor)
-                    semantic_predictor.set_image(image_rgb)
-                    point_predictor.set_image(image_rgb)
+                    if semantic_predictor is not None:
+                        semantic_predictor.set_image(image_rgb)
+                    if point_predictor is not None:
+                        point_predictor.set_image(image_rgb)
                 else:
                     raise
 
             self._predictor_ready = True
             self._image_rgb = image_rgb
 
-            self._semantic_features = semantic_predictor.features
-            self._point_features = point_predictor.features
+            self._semantic_features = (
+                semantic_predictor.features if semantic_predictor is not None else None
+            )
+            self._point_features = (
+                point_predictor.features if point_predictor is not None else None
+            )
             self._src_shape = image_rgb.shape[:2]
-            self._reset_semantic_prompt_state(semantic_predictor)
-            try:
-                self._prime_point_prompt_context(semantic_predictor)
-            except Exception as exc:
-                logger.warning("Neutral point context init failed: {}", exc)
+            if semantic_predictor is not None:
+                self._reset_semantic_prompt_state(semantic_predictor)
+                try:
+                    self._prime_point_prompt_context(semantic_predictor)
+                except Exception as exc:
+                    logger.warning("Neutral point context init failed: {}", exc)
 
             # log(
             #     "[SAM3] set_image complete: src_shape={} feature_ready={}".format(
@@ -291,8 +352,8 @@ class SAM3Service:
 
     def query_text(self, text: str) -> List[Tuple[int, int, int, int]]:
         with self._predictor_lock:
-            if not self.available:
-                raise RuntimeError("SAM3 service is unavailable")
+            if not self.semantic_available:
+                raise RuntimeError("SAM3 semantic mode is unavailable")
             if self._semantic_features is None or self._src_shape is None:
                 return []
             if not text.strip():
@@ -320,8 +381,8 @@ class SAM3Service:
 
     def query_point(self, x: int, y: int) -> List[Tuple[int, int, int, int]]:
         with self._predictor_lock:
-            if not self.available:
-                raise RuntimeError("SAM3 service is unavailable")
+            if not self.point_available:
+                raise RuntimeError("SAM3 point mode is unavailable")
             if self._src_shape is None:
                 logger.warning("query_point skipped: src_shape not ready")
                 return []

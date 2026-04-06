@@ -44,6 +44,8 @@ class AppWindow(QMainWindow):
             imgsz=self._settings.sam3_image_size,
         )
         self._sam_enabled = self._settings.sam3_enabled
+        self._sam_semantic_enabled = self._settings.sam3_semantic_enabled
+        self._sam_point_enabled = self._settings.sam3_point_enabled
         self._settings_action = None
         self._admin_mode_action = None
         self._focus_shortcut = None
@@ -101,6 +103,10 @@ class AppWindow(QMainWindow):
             self._settings.sam3_overlap_iou,
         )
         self._refresh_sam_service()
+        self.display_panel.image_view.set_sam_prompt_modes(
+            self._sam_semantic_enabled,
+            self._sam_point_enabled,
+        )
         self.display_panel.image_view.set_sam_assist_enabled(
             self._sam_enabled and self._sam3.available
         )
@@ -312,7 +318,10 @@ class AppWindow(QMainWindow):
             self._settings.sam3_overlap_iou,
         )
         try:
-            self._sam3.ensure_loaded()
+            self._sam3.ensure_loaded(
+                semantic_enabled=self._settings.sam3_semantic_enabled,
+                point_enabled=self._settings.sam3_point_enabled,
+            )
         except Exception as exc:
             logger.warning("SAM3 assist unavailable: {}", exc)
 
@@ -336,6 +345,8 @@ class AppWindow(QMainWindow):
             )
 
         self._sam_enabled = current.sam3_enabled
+        self._sam_semantic_enabled = current.sam3_semantic_enabled
+        self._sam_point_enabled = current.sam3_point_enabled
         self._sam3.configure_runtime(
             model_path=current.sam3_model_path,
             conf=current.sam3_confidence,
@@ -348,10 +359,25 @@ class AppWindow(QMainWindow):
 
         if self._sam_enabled and not self._sam3.available:
             try:
-                self._sam3.ensure_loaded()
+                self._sam3.ensure_loaded(
+                    semantic_enabled=self._sam_semantic_enabled,
+                    point_enabled=self._sam_point_enabled,
+                )
+            except Exception as exc:
+                logger.warning("SAM3 assist unavailable: {}", exc)
+        elif self._sam_enabled:
+            try:
+                self._sam3.ensure_loaded(
+                    semantic_enabled=self._sam_semantic_enabled,
+                    point_enabled=self._sam_point_enabled,
+                )
             except Exception as exc:
                 logger.warning("SAM3 assist unavailable: {}", exc)
 
+        self.display_panel.image_view.set_sam_prompt_modes(
+            self._sam_semantic_enabled,
+            self._sam_point_enabled,
+        )
         self.display_panel.image_view.set_sam_assist_enabled(
             self._sam_enabled and self._sam3.available
         )

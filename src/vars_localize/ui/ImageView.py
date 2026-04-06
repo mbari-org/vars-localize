@@ -19,6 +19,7 @@ from PyQt6.QtGui import (
 from PyQt6.QtWidgets import (
     QGraphicsView,
     QGraphicsScene,
+    QGraphicsLineItem,
     QDialog,
     QVBoxLayout,
     QPushButton,
@@ -85,6 +86,8 @@ class ImageView(QGraphicsView):
         self.mouse_line_pen = QPen(QColor(PALETTE["crosshairs"]))
         self.mouse_hline = QLineF()
         self.mouse_vline = QLineF()
+        self._crosshair_h_item: Optional[QGraphicsLineItem] = None
+        self._crosshair_v_item: Optional[QGraphicsLineItem] = None
 
         self.hov_tl_rect = None
         self.hov_tr_rect = None
@@ -100,9 +103,13 @@ class ImageView(QGraphicsView):
         self._image_loading_error = None
 
         self._sam_assist_enabled = False
+        self._sam_semantic_enabled = True
+        self._sam_point_enabled = True
         self._sam_ready_image_uuid = None
         self._sam_embedding_busy = False
         self._sam_embedding_request_uuid = None
+        self._sam_failed_image_uuid = None
+        self._sam_last_error_message: Optional[str] = None
         self._sam_candidate_boxes: List[SourceBoundingBox] = []
         self._sam_candidate_index = 0
         self._sam_candidate_observation_uuid = None
@@ -121,6 +128,10 @@ class ImageView(QGraphicsView):
         self._sam_overlap_iou = self.SAM_OVERLAP_IOU
         self._video_data_request_uuid = None
         self._active_annotation_concept: Optional[str] = None
+
+        # Cache scaled pixmap by (source cache key, view width, view height).
+        self._scaled_pixmap_key: Optional[tuple[int, int, int]] = None
+        self._scaled_pixmap: Optional[QPixmap] = None
 
     def configure_sam_params(self, min_area: int, overlap_iou: float):
         self._sam_min_area = max(1, int(min_area))
@@ -218,7 +229,9 @@ class ImageView(QGraphicsView):
             self._sam_candidate_boxes = []
             self._sam_candidate_index = 0
             self._notify_sam_candidate_state()
-            if self._active_annotation_concept:
+            if self._active_annotation_concept and getattr(
+                self, "_sam_semantic_enabled", True
+            ):
                 self._start_sam_candidates_for_concept(self._active_annotation_concept)
             else:
                 self._sam_pending_concept = None
@@ -313,6 +326,8 @@ class ImageView(QGraphicsView):
         self._sam_status_ui_callback(status)
 
     def _point_capability_text(self) -> str:
+        if not getattr(self, "_sam_point_enabled", True):
+            return "point prompts disabled"
         if self.sam3_service is None or not self.sam3_service.available:
             return "point prompts unavailable"
 
@@ -325,6 +340,11 @@ class ImageView(QGraphicsView):
             return "point prompts load on first hover"
         return "point prompts unavailable"
 
+    def _semantic_capability_text(self) -> str:
+        if not getattr(self, "_sam_semantic_enabled", True):
+            return "text prompts disabled"
+        return "text prompts ready"
+
     def _build_sam_status(self) -> str:
         if self.sam3_service is None or not self.sam3_service.available:
             return "SAM unavailable"
@@ -334,11 +354,19 @@ class ImageView(QGraphicsView):
             return "SAM enabled, waiting for image"
         if self._sam_embedding_busy:
             return "SAM loading image embedding..."
+        current_uuid = self.moment.imaged_moment.uuid
+        if self._sam_failed_image_uuid == current_uuid:
+            return self._sam_last_error_message or "SAM embedding failed"
         if self._sam_ready_image_uuid == self.moment.imaged_moment.uuid:
-            return "SAM ready: text prompts ready, {}".format(
-                self._point_capability_text()
+            return "SAM ready: {}, {}".format(
+                self._semantic_capability_text(), self._point_capability_text()
             )
         return "SAM enabled, embedding not ready"
+
+    @staticmethod
+    def _is_cuda_oom_error(err: Exception) -> bool:
+        text = str(err).lower()
+        return "out of memory" in text and "cuda" in text
 
     def set_sam_assist_enabled(self, enabled: bool):
         is_available = bool(
@@ -349,6 +377,24 @@ class ImageView(QGraphicsView):
             self._clear_sam_state(reset_embedding=False)
         else:
             self._maybe_start_sam_embedding()
+        self._notify_sam_status(self._build_sam_status())
+        self.redraw()
+
+    def set_sam_prompt_modes(self, semantic_enabled: bool, point_enabled: bool):
+        self._sam_semantic_enabled = bool(semantic_enabled)
+        self._sam_point_enabled = bool(point_enabled)
+
+        if not self._sam_semantic_enabled:
+            self._sam_candidate_boxes = []
+            self._sam_candidate_index = 0
+            self._sam_pending_concept = None
+
+        if not self._sam_point_enabled:
+            self._sam_hover_box = None
+            self._sam_hover_inflight = False
+            self._sam_last_hover_point = None
+
+        self._notify_sam_candidate_state()
         self._notify_sam_status(self._build_sam_status())
         self.redraw()
 
@@ -374,6 +420,8 @@ class ImageView(QGraphicsView):
         if reset_embedding:
             self._sam_ready_image_uuid = None
             self._sam_embedding_request_uuid = None
+            self._sam_failed_image_uuid = None
+            self._sam_last_error_message = None
         self._notify_sam_candidate_state()
         self._notify_sam_status(self._build_sam_status())
 
@@ -455,7 +503,11 @@ class ImageView(QGraphicsView):
             return
 
         moment_uuid = self.moment.imaged_moment.uuid
-        if self._sam_ready_image_uuid == moment_uuid or self._sam_embedding_busy:
+        if (
+            self._sam_ready_image_uuid == moment_uuid
+            or self._sam_embedding_busy
+            or self._sam_failed_image_uuid == moment_uuid
+        ):
             self._notify_sam_status(self._build_sam_status())
             return
 
@@ -477,6 +529,8 @@ class ImageView(QGraphicsView):
             if current_uuid != embedded_uuid:
                 return
             self._sam_ready_image_uuid = embedded_uuid
+            self._sam_failed_image_uuid = None
+            self._sam_last_error_message = None
             self._notify_sam_status(self._build_sam_status())
             pending_concept = self._sam_pending_concept
             if pending_concept:
@@ -484,8 +538,25 @@ class ImageView(QGraphicsView):
                 self._start_sam_candidates_for_concept(pending_concept)
 
         def _on_error(err):
-            logger.error("Embedding failed: {}", err)
-            self._notify_sam_status("SAM embedding failed")
+            current_uuid = self.moment.imaged_moment.uuid if self.moment else None
+            if current_uuid != moment_uuid:
+                return
+
+            if self._is_cuda_oom_error(err):
+                self._sam_failed_image_uuid = moment_uuid
+                self._sam_last_error_message = (
+                    "SAM embedding failed (GPU out of memory)"
+                )
+                logger.error(
+                    "Embedding failed for image {} due to CUDA OOM; further retries are paused until image changes",
+                    moment_uuid,
+                )
+            else:
+                self._sam_failed_image_uuid = moment_uuid
+                self._sam_last_error_message = "SAM embedding failed"
+                logger.error("Embedding failed for image {}: {}", moment_uuid, err)
+
+            self._notify_sam_status(self._build_sam_status())
 
         def _on_finished():
             self._sam_embedding_busy = False
@@ -495,6 +566,7 @@ class ImageView(QGraphicsView):
                 self._sam_assist_enabled
                 and current_uuid is not None
                 and self._sam_ready_image_uuid != current_uuid
+                and self._sam_failed_image_uuid != current_uuid
             ):
                 self._maybe_start_sam_embedding()
 
@@ -510,6 +582,9 @@ class ImageView(QGraphicsView):
         if not self._sam_assist_enabled:
             self._notify_sam_status(self._build_sam_status())
             return
+        if not getattr(self, "_sam_semantic_enabled", True):
+            self._notify_sam_status(self._build_sam_status())
+            return
         if self.moment is None:
             self._notify_sam_status(self._build_sam_status())
             return
@@ -519,6 +594,9 @@ class ImageView(QGraphicsView):
 
         moment_uuid = self.moment.imaged_moment.uuid
         if self._sam_ready_image_uuid != moment_uuid:
+            if self._sam_failed_image_uuid == moment_uuid:
+                self._notify_sam_status(self._build_sam_status())
+                return
             self._notify_sam_status("SAM waiting for embedding to query concept...")
             self._sam_pending_concept = concept
             self._maybe_start_sam_embedding()
@@ -654,6 +732,8 @@ class ImageView(QGraphicsView):
     def _maybe_update_hover_candidate(self, event: QMouseEvent):
         if not self._sam_assist_enabled:
             return
+        if not getattr(self, "_sam_point_enabled", True):
+            return
         if self.pixmap_src is None or self.moment is None:
             return
         if event.buttons() & Qt.MouseButton.LeftButton:
@@ -731,8 +811,8 @@ class ImageView(QGraphicsView):
                 # )
             if self.sam3_service is not None and self.sam3_service.available:
                 self._notify_sam_status(
-                    "SAM ready: text prompts ready, {}".format(
-                        self._point_capability_text()
+                    "SAM ready: {}, {}".format(
+                        self._semantic_capability_text(), self._point_capability_text()
                     )
                 )
             self.redraw()
@@ -745,8 +825,8 @@ class ImageView(QGraphicsView):
             self._sam_hover_inflight = False
             if self.sam3_service is not None and self.sam3_service.available:
                 self._notify_sam_status(
-                    "SAM ready: text prompts ready, {}".format(
-                        self._point_capability_text()
+                    "SAM ready: {}, {}".format(
+                        self._semantic_capability_text(), self._point_capability_text()
                     )
                 )
 
@@ -833,9 +913,6 @@ class ImageView(QGraphicsView):
                 elif handle_type in (2, 3):
                     self.setCursor(Qt.CursorShape.SizeBDiagCursor)
                 else:
-                    # Draw crosshairs only while cursor is inside the view.
-                    self.scene().addLine(self.mouse_hline, self.mouse_line_pen)
-                    self.scene().addLine(self.mouse_vline, self.mouse_line_pen)
                     self.setCursor(Qt.CursorShape.BlankCursor)
             else:
                 self.setCursor(Qt.CursorShape.ArrowCursor)
@@ -865,9 +942,13 @@ class ImageView(QGraphicsView):
             )
             self.setCursor(Qt.CursorShape.ArrowCursor)
 
+        self._update_mouse_overlay()
+
     def clear(self):
         """Clear scene items and reset all bounding box managers."""
         self.scene().clear()
+        self._crosshair_h_item = None
+        self._crosshair_v_item = None
         if self.observation_map:
             for box_manager in [
                 entry.observation.box_manager for entry in self.observation_map.values()
@@ -1021,6 +1102,7 @@ class ImageView(QGraphicsView):
 
         if (
             self._sam_assist_enabled
+            and getattr(self, "_sam_semantic_enabled", True)
             and self._active_annotation_concept
             and not preserve_same_image
         ):
@@ -1067,8 +1149,41 @@ class ImageView(QGraphicsView):
             pixmap: Source pixmap to display.
         """
         self.pixmap_src = pixmap
+        self._invalidate_scaled_pixmap_cache()
         self.pt_1 = None
         self.pt_2 = None
+
+    def _invalidate_scaled_pixmap_cache(self):
+        self._scaled_pixmap_key = None
+        self._scaled_pixmap = None
+
+    def _ensure_crosshair_items(self):
+        if self._crosshair_h_item is None:
+            self._crosshair_h_item = self.scene().addLine(
+                self.mouse_hline, self.mouse_line_pen
+            )
+        if self._crosshair_v_item is None:
+            self._crosshair_v_item = self.scene().addLine(
+                self.mouse_vline, self.mouse_line_pen
+            )
+
+    def _update_mouse_overlay(self):
+        """Update live crosshair overlay without rebuilding the full scene."""
+        if self.pixmap_src is None:
+            return
+
+        self._ensure_crosshair_items()
+        if self._crosshair_h_item is not None:
+            self._crosshair_h_item.setLine(self.mouse_hline)
+        if self._crosshair_v_item is not None:
+            self._crosshair_v_item.setLine(self.mouse_vline)
+
+        handle_type = self.resize_type or self._hover_handle_type
+        show_crosshair = bool(self._mouse_in_view and handle_type == 0)
+        if self._crosshair_h_item is not None:
+            self._crosshair_h_item.setVisible(show_crosshair)
+        if self._crosshair_v_item is not None:
+            self._crosshair_v_item.setVisible(show_crosshair)
 
     def select_observation(self, observation_uuid: str):
         """Set the active observation used for highlight/edit focus.
@@ -1127,9 +1242,19 @@ class ImageView(QGraphicsView):
         """
         if not pixmap or pixmap.isNull():
             return
-        scaled_pixmap = pixmap.scaled(
-            self.width(), self.height(), Qt.AspectRatioMode.KeepAspectRatio
-        )
+
+        cache_key = (int(pixmap.cacheKey()), int(self.width()), int(self.height()))
+        if self._scaled_pixmap_key == cache_key and self._scaled_pixmap is not None:
+            scaled_pixmap = self._scaled_pixmap
+        else:
+            scaled_pixmap = pixmap.scaled(
+                self.width(),
+                self.height(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+            )
+            self._scaled_pixmap_key = cache_key
+            self._scaled_pixmap = scaled_pixmap
+
         self.pixmap_scalar = scaled_pixmap.width() / pixmap.width()
         self.pixmap_pos = QPointF(
             self.width() / 2 - scaled_pixmap.width() / 2,
@@ -1682,6 +1807,9 @@ class ImageView(QGraphicsView):
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         self._mouse_in_view = True
+        previous_hovered_box = self.hovered_box
+        previous_hover_handle_type = self._hover_handle_type
+
         if self.pixmap_src:
             self.pt_2 = self.get_im_rel_point(event.pos())
             if self.hovered_box:
@@ -1751,7 +1879,17 @@ class ImageView(QGraphicsView):
 
         self._maybe_update_hover_candidate(event)
 
-        self.redraw()
+        is_dragging = bool(
+            self.resize_type
+            or (event.buttons() & Qt.MouseButton.LeftButton and self.pt_1 is not None)
+        )
+        hover_changed = previous_hovered_box != self.hovered_box
+        handle_changed = previous_hover_handle_type != self._hover_handle_type
+
+        if is_dragging or hover_changed or handle_changed:
+            self.redraw()
+        else:
+            self._update_mouse_overlay()
 
     def enterEvent(self, event: QEnterEvent) -> None:
         self._mouse_in_view = True
@@ -1777,6 +1915,7 @@ class ImageView(QGraphicsView):
                     )
 
     def resizeEvent(self, event: QResizeEvent) -> None:
+        self._invalidate_scaled_pixmap_cache()
         self.redraw()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:

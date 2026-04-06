@@ -18,6 +18,8 @@ class AppSettingsSnapshot:
     clear_results_shortcut: str
     open_settings_shortcut: str
     sam3_enabled: bool
+    sam3_semantic_enabled: bool
+    sam3_point_enabled: bool
     sam3_model_path: str
     sam3_confidence: float
     sam3_image_size: int
@@ -39,6 +41,8 @@ class AppSettings:
     KEY_SHORTCUT_OPEN_SETTINGS = "shortcuts/open_settings"
 
     KEY_SAM3_ENABLED = "ai/sam3_enabled"
+    KEY_SAM3_SEMANTIC_ENABLED = "ai/sam3_semantic_enabled"
+    KEY_SAM3_POINT_ENABLED = "ai/sam3_point_enabled"
     KEY_SAM3_MODEL_PATH = "ai/sam3_model_path"
     KEY_SAM3_CONFIDENCE = "ai/sam3_confidence"
     KEY_SAM3_IMAGE_SIZE = "ai/sam3_image_size"
@@ -53,6 +57,8 @@ class AppSettings:
     DEFAULT_SHORTCUT_OPEN_SETTINGS = "Ctrl+,"
 
     DEFAULT_SAM3_ENABLED = False
+    DEFAULT_SAM3_SEMANTIC_ENABLED = True
+    DEFAULT_SAM3_POINT_ENABLED = True
     DEFAULT_SAM3_MODEL_PATH = ""
     DEFAULT_SAM3_CONFIDENCE = 0.35
     DEFAULT_SAM3_IMAGE_SIZE = 644
@@ -71,6 +77,8 @@ class AppSettings:
             clear_results_shortcut=self.clear_results_shortcut,
             open_settings_shortcut=self.open_settings_shortcut,
             sam3_enabled=self.sam3_enabled,
+            sam3_semantic_enabled=self.sam3_semantic_enabled,
+            sam3_point_enabled=self.sam3_point_enabled,
             sam3_model_path=self.sam3_model_path,
             sam3_confidence=self.sam3_confidence,
             sam3_image_size=self.sam3_image_size,
@@ -187,6 +195,34 @@ class AppSettings:
     @sam3_enabled.setter
     def sam3_enabled(self, value: bool):
         self._settings.setValue(self.KEY_SAM3_ENABLED, bool(value))
+
+    @property
+    def sam3_semantic_enabled(self) -> bool:
+        return bool(
+            self._settings.value(
+                self.KEY_SAM3_SEMANTIC_ENABLED,
+                self.DEFAULT_SAM3_SEMANTIC_ENABLED,
+                type=bool,
+            )
+        )
+
+    @sam3_semantic_enabled.setter
+    def sam3_semantic_enabled(self, value: bool):
+        self._settings.setValue(self.KEY_SAM3_SEMANTIC_ENABLED, bool(value))
+
+    @property
+    def sam3_point_enabled(self) -> bool:
+        return bool(
+            self._settings.value(
+                self.KEY_SAM3_POINT_ENABLED,
+                self.DEFAULT_SAM3_POINT_ENABLED,
+                type=bool,
+            )
+        )
+
+    @sam3_point_enabled.setter
+    def sam3_point_enabled(self, value: bool):
+        self._settings.setValue(self.KEY_SAM3_POINT_ENABLED, bool(value))
 
     @property
     def sam3_model_path(self) -> str:

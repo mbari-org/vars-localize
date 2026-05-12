@@ -38,6 +38,7 @@ SEARCH_MODE_ORDER = [
     "imaged_moment_uuid",
     "image_reference_uuid",
     "video_reference_uuid",
+    "video_sequence_name",
 ]
 
 SEARCH_MODE_CONFIG = {
@@ -60,6 +61,11 @@ SEARCH_MODE_CONFIG = {
         "label": "Video Reference UUID",
         "placeholder": "Paste one UUID or comma-separated UUIDs",
         "hint": "Resolve video reference UUIDs into timeline-sorted imaged moments.",
+    },
+    "video_sequence_name": {
+        "label": "Video Sequence",
+        "placeholder": "Enter video sequence name",
+        "hint": "Load all imaged moments with images for a video sequence.",
     },
 }
 
@@ -202,15 +208,17 @@ class SearchPanel(QDockWidget):
         self._contents_layout.addWidget(self.paginator)
 
         self.observer = ""
+        self._video_sequence_names = []
 
         self._state.observerChanged.connect(self._on_observer_changed)
-        self._state.conceptsChanged.connect(self.search_bar.set_concepts)
+        self._state.conceptsChanged.connect(self._on_concepts_changed)
         self._state.loadingChanged.connect(self._set_loading_state)
         self._state.conceptChanged.connect(lambda _: self._update_results_label())
         self._state.uuidsChanged.connect(lambda _: self._update_results_label())
 
         self.set_search_mode("concept")
         self._load_concepts_async()
+        self._load_video_sequence_names_async()
 
     def set_page_size(self, page_size: int):
         self.paginator.set_limit(page_size)
@@ -219,6 +227,10 @@ class SearchPanel(QDockWidget):
 
     def _on_observer_changed(self, observer: str):
         self.observer = observer
+
+    def _on_concepts_changed(self, concepts):
+        if self.search_mode != "video_sequence_name":
+            self.search_bar.set_concepts(concepts)
 
     def _set_loading_state(self, loading: bool):
         self.loading_bar.setVisible(loading)
@@ -300,6 +312,11 @@ class SearchPanel(QDockWidget):
         self.search_bar.setToolTip(config["hint"])
         self.mode_hint_button.setToolTip(config["hint"])
 
+        if mode == "video_sequence_name":
+            self.search_bar.set_concepts(self._video_sequence_names)
+        else:
+            self.search_bar.set_concepts(self._state.concepts)
+
         target_index = self.mode_combo.findData(mode)
         if target_index >= 0 and self.mode_combo.currentIndex() != target_index:
             self.mode_combo.setCurrentIndex(target_index)
@@ -353,6 +370,41 @@ class SearchPanel(QDockWidget):
 
         return [item[1] for item in sorted(timestamp_uuid_tuples)]
 
+    def _resolve_imaged_moments_by_video_sequence(self, names):
+        timestamp_uuid_tuples = set()
+        for video_sequence_name in names:
+            media_list = self._m3.get_media_by_video_sequence_name(video_sequence_name)
+            video_reference_uuids = list(
+                dict.fromkeys(
+                    m["video_reference_uuid"]
+                    for m in media_list
+                    if "video_reference_uuid" in m
+                )
+            )
+            for video_reference_uuid in video_reference_uuids:
+                moments = self._m3.get_imaged_moments_by_video_reference(
+                    video_reference_uuid
+                )
+                for moment in moments:
+                    if not moment.get("image_references"):
+                        continue
+                    uuid = moment.get("uuid")
+                    if not uuid:
+                        continue
+                    timestamp = datetime.now()
+                    if "recorded_timestamp" in moment:
+                        try:
+                            timestamp = datetime.strptime(
+                                moment["recorded_timestamp"], "%Y-%m-%dT%H:%M:%S.%fZ"
+                            )
+                        except ValueError:
+                            timestamp = datetime.strptime(
+                                moment["recorded_timestamp"], "%Y-%m-%dT%H:%M:%SZ"
+                            )
+                    timestamp_uuid_tuples.add((timestamp, uuid))
+
+        return [item[1] for item in sorted(timestamp_uuid_tuples)]
+
     def _resolve_uuids(self, mode: str, query: str):
         values = self._parse_query_values(query)
         if not values:
@@ -364,6 +416,8 @@ class SearchPanel(QDockWidget):
             return self._resolve_imaged_moments_by_image_reference(values)
         if mode == "video_reference_uuid":
             return self._resolve_imaged_moments_by_video_reference(values)
+        if mode == "video_sequence_name":
+            return self._resolve_imaged_moments_by_video_sequence(values)
         return []
 
     def _set_search_results(self, mode: str, query: str, uuids):
@@ -443,9 +497,28 @@ class SearchPanel(QDockWidget):
             on_finished=self._end_loading,
         )
 
+    def _load_video_sequence_names_async(self):
+        self._begin_loading()
+
+        def _on_result(names):
+            self._video_sequence_names = names
+            if self.search_mode == "video_sequence_name":
+                self.search_bar.set_concepts(names)
+
+        run_async(
+            self,
+            self._m3.get_all_video_sequence_names,
+            on_result=_on_result,
+            on_error=lambda err: self._show_error(
+                "Failed to load video sequence names from VAM.\n\n{}".format(err)
+            ),
+            on_finished=self._end_loading,
+        )
+
     def concept_selected(self, concept):
-        self.set_search_mode("concept")
-        if concept == self.concept and self.search_mode == "concept":
+        if self.search_mode != "concept":
+            return
+        if concept == self.concept:
             return
         self.load_concept(concept)
 

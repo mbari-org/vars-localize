@@ -297,6 +297,44 @@ class M3Service:
             video_reference_uuid
         )
 
+    def get_imaged_moments_by_video_reference(
+        self, video_reference_uuid: str
+    ) -> List[Dict[str, Any]]:
+        """Compatibility wrapper for video-reference imaged moment lookup.
+
+        Args:
+            video_reference_uuid: Video reference UUID.
+
+        Returns:
+            Parsed payload list of ImagedMomentSC objects.
+        """
+        return self._annosaurus_client().get_imaged_moments_by_video_reference(
+            video_reference_uuid
+        )
+
+    def get_all_video_sequence_names(self) -> List[str]:
+        """Compatibility wrapper for all video sequence names.
+
+        Returns:
+            List of video sequence name strings.
+        """
+        return self._vampire_squid_client().get_all_video_sequence_names()
+
+    def get_media_by_video_sequence_name(
+        self, video_sequence_name: str
+    ) -> List[Dict[str, Any]]:
+        """Compatibility wrapper for video sequence media lookup.
+
+        Args:
+            video_sequence_name: Video sequence name.
+
+        Returns:
+            Parsed payload list of Media objects.
+        """
+        return self._vampire_squid_client().get_media_by_video_sequence_name(
+            video_sequence_name
+        )
+
     def delete_observation(self, observation_uuid: str) -> requests.Response:
         """Compatibility wrapper for observation deletion.
 

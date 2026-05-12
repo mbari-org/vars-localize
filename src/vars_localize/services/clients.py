@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
 import requests
 
@@ -31,6 +32,7 @@ class AnnosaurusClient:
     IMAGED_MOMENTS_BY_CONCEPT = "/fast/imagedmoments/concept/images"
     IMAGED_MOMENTS_BY_IMAGE_REFERENCE = "/annotations/imagereference"
     ANNOTATIONS_BY_VIDEO_REFERENCE = "/fast/videoreference"
+    IMAGED_MOMENTS_BY_VIDEO_REFERENCE = "/imagedmoments/videoreference"
 
     def __init__(
         self,
@@ -151,6 +153,25 @@ class AnnosaurusClient:
             "get",
             self.ANNOTATIONS_BY_VIDEO_REFERENCE + "/" + video_reference_uuid,
             params={"data": True},
+        )
+        payload = response.json()
+        return payload if isinstance(payload, list) else []
+
+    def get_imaged_moments_by_video_reference(
+        self, video_reference_uuid: str
+    ) -> List[Dict[str, Any]]:
+        """Return imaged moments for a video reference UUID.
+
+        Args:
+            video_reference_uuid: Video reference UUID.
+
+        Returns:
+            Parsed JSON payload list of ImagedMomentSC objects.
+        """
+        self._require_auth()
+        response = self._request(
+            "get",
+            self.IMAGED_MOMENTS_BY_VIDEO_REFERENCE + "/" + video_reference_uuid,
         )
         payload = response.json()
         return payload if isinstance(payload, list) else []
@@ -409,6 +430,8 @@ class VampireSquidClient:
     VIDEO_DATA = "/videoreferences"
     VIDEO_BY_VIDEO_REFERENCE_UUID = "/videos/videoreference"
     MEDIA_BY_VIDEO_REFERENCE_UUID = "/media/videoreference"
+    MEDIA_BY_VIDEO_SEQUENCE_NAME = "/media/videosequence"
+    ALL_VIDEO_SEQUENCE_NAMES = "/videosequences/names"
 
     def __init__(self, endpoint: Dict[str, Any], session: requests.Session):
         """Initialize from Raziel endpoint metadata and shared app session.
@@ -487,3 +510,31 @@ class VampireSquidClient:
         if isinstance(response_parsed, list):
             return response_parsed[0] if response_parsed else {}
         return response_parsed if isinstance(response_parsed, dict) else {}
+
+    def get_all_video_sequence_names(self) -> List[str]:
+        """Return all video sequence names.
+
+        Returns:
+            Sorted list of video sequence name strings.
+        """
+        response = self._request("get", self.ALL_VIDEO_SEQUENCE_NAMES)
+        payload = response.json()
+        return payload if isinstance(payload, list) else []
+
+    def get_media_by_video_sequence_name(
+        self, video_sequence_name: str
+    ) -> List[Dict[str, Any]]:
+        """Return all media for a video sequence name.
+
+        Args:
+            video_sequence_name: Video sequence name.
+
+        Returns:
+            Parsed JSON payload list of Media objects.
+        """
+        response = self._request(
+            "get",
+            self.MEDIA_BY_VIDEO_SEQUENCE_NAME + "/" + quote(video_sequence_name, safe=""),
+        )
+        payload = response.json()
+        return payload if isinstance(payload, list) else []

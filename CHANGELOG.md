@@ -1,6 +1,14 @@
 # CHANGELOG
 
 
+## v0.5.0 (2026-05-12)
+
+### Features
+
+- Add query by video sequence
+  ([`b22b4c2`](https://github.com/mbari-org/vars-localize/commit/b22b4c2f865b03e4f6e96cb1cd14d59d1bbb339b))
+
+
 ## v0.4.1 (2026-04-06)
 
 ### Bug Fixes

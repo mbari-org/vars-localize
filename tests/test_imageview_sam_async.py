@@ -7,6 +7,23 @@ import pytest
 pytest.importorskip("PyQt6")
 
 
+def test_get_prompt_concepts_prefers_app_state_over_video_sequence_suggestions():
+    from vars_localize.ui.ImageView import ImageView
+
+    view = ImageView.__new__(ImageView)
+    view.window = lambda: SimpleNamespace(
+        search_panel=SimpleNamespace(
+            _state=SimpleNamespace(concepts=["Actiniaria", "Cnidaria"]),
+            search_mode="video_sequence_name",
+            search_bar=SimpleNamespace(
+                get_concepts=lambda: ["CIC 2023 ArcticRays Survey"]
+            ),
+        )
+    )
+
+    assert view._get_prompt_concepts() == ["Actiniaria", "Cnidaria"]
+
+
 def test_set_sam_assist_enabled_transitions(monkeypatch):
     from vars_localize.ui.ImageView import ImageView
 

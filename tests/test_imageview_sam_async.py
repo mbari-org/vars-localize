@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("PyQt6")
 
 
-def test_get_prompt_concepts_prefers_app_state_over_video_sequence_suggestions():
+def test_get_prompt_concepts_uses_app_state_when_search_mode_is_video_sequence():
     from vars_localize.ui.ImageView import ImageView
 
     view = ImageView.__new__(ImageView)

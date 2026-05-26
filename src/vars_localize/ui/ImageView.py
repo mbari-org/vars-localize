@@ -1522,12 +1522,8 @@ class ImageView(QGraphicsView):
         dialog.setWindowFlag(Qt.WindowType.WindowCloseButtonHint, False)
         search = ConceptSearchbar()
 
-        # Reuse concepts from the main search bar so the prompt behaves consistently.
-        try:
-            root_any = cast(Any, self.window())
-            search.set_concepts(root_any.search_panel.search_bar.get_concepts())
-        except Exception:
-            search.set_concepts([])
+        # Reuse loaded concept names from shared app state.
+        search.set_concepts(self._get_prompt_concepts())
 
         submit_button = QPushButton("Submit")
         submit_button.setEnabled(False)
@@ -1556,6 +1552,20 @@ class ImageView(QGraphicsView):
         if accepted != QDialog.DialogCode.Accepted:
             return ""
         return concept_selected.strip()
+
+    def _get_prompt_concepts(self):
+        """Return concept suggestions for prompt_concept."""
+        try:
+            root_any = cast(Any, self.window())
+            search_panel = root_any.search_panel
+            concepts = list(search_panel._state.concepts or [])
+            if concepts:
+                return concepts
+            if search_panel.search_mode == "concept":
+                return search_panel.search_bar.get_concepts()
+        except Exception:
+            pass
+        return []
 
     def make_new_observation(self, concept):
         """Create a new observation for the current imaged moment.

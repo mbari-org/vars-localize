@@ -1,6 +1,18 @@
 # CHANGELOG
 
 
+## v0.5.1 (2026-05-26)
+
+### Bug Fixes
+
+- Use concept catalog (not search mode suggestions) in “Specify a concept” dialog
+  ([#8](https://github.com/mbari-org/vars-localize/pull/8),
+  [`6a740d2`](https://github.com/mbari-org/vars-localize/commit/6a740d25e6fac8794f93f1e1ebc072b291424ccc))
+
+* fix: use concept list for Specify a concept dialog suggestions * test: clarify regression test
+  name for concept prompt suggestions
+
+
 ## v0.5.0 (2026-05-12)
 
 ### Features

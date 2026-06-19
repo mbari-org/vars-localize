@@ -1549,6 +1549,10 @@ class ImageView(QGraphicsView):
         dialog.adjustSize()
         center_window(dialog, self.window())
         accepted = dialog.exec()
+        # Restore mouse-in-view state: the enter event from the dialog closing
+        # may not be delivered until the next event loop iteration, so the
+        # crosshair redraw that follows would otherwise run with a stale False.
+        self._mouse_in_view = True
         if accepted != QDialog.DialogCode.Accepted:
             return ""
         return concept_selected.strip()
@@ -1614,19 +1618,22 @@ class ImageView(QGraphicsView):
 
     def reload_moment(self, preserve_sam_state: bool = False):
         """Fully reload the current imaged moment entry."""
-        image = self.moment.imaged_moment.cached_image
+        target_entry = self.moment
+        image = target_entry.imaged_moment.cached_image
 
         def _on_done():
-            if image is not None and self.moment is not None:
-                self.moment.imaged_moment.cached_image = image
-            if self.moment is not None:
-                self.load_moment(
-                    self.moment,
-                    preserve_sam_state=preserve_sam_state,
-                )  # Reload imaged moment
+            # Guard: ignore if the user navigated away before the reload finished.
+            if self.moment is not target_entry:
+                return
+            if image is not None:
+                target_entry.imaged_moment.cached_image = image
+            self.load_moment(
+                target_entry,
+                preserve_sam_state=preserve_sam_state,
+            )
 
-        self.moment.treeWidget().load_imaged_moment_entry_async(
-            self.moment,
+        target_entry.treeWidget().load_imaged_moment_entry_async(
+            target_entry,
             on_error=lambda err: QMessageBox.warning(
                 self,
                 "Refresh failed",

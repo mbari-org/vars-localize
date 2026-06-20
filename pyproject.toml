@@ -1,6 +1,6 @@
 [project]
 name = "vars-localize"
-version = "0.5.1"
+version = "0.5.2-rc.1"
 description = "Tool for creating localization with VARS."
 authors = [
     { name = "Kevin Barnard", email = "kbarnard@mbari.org" }

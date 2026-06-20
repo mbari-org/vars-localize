@@ -1529,17 +1529,29 @@ class ImageView(QGraphicsView):
         submit_button.setEnabled(False)
         submit_button.pressed.connect(dialog.accept)
 
+        concepts = search.get_concepts()
         concept_selected = ""
 
-        def update_concept_selected(concept):
-            nonlocal concept_selected
-            text = str(concept or "").strip()
-            concept_selected = text
-            submit_button.setEnabled(bool(text))
+        def _find_match(text: str) -> str:
+            """Return the correctly-cased concept for *text*, or empty string."""
+            t = text.strip().lower()
+            return next((c for c in concepts if c.lower() == t), "")
 
-        search.textChanged.connect(update_concept_selected)
-        search.set_callback(update_concept_selected)
-        search.returnPressed.connect(dialog.accept)
+        def on_activated(concept: str):
+            nonlocal concept_selected
+            concept_selected = str(concept or "").strip()
+            submit_button.setEnabled(bool(concept_selected))
+
+        def on_return_pressed():
+            nonlocal concept_selected
+            matched = _find_match(search.text())
+            if matched:
+                concept_selected = matched
+                dialog.accept()
+
+        search.textChanged.connect(lambda _: submit_button.setEnabled(False))
+        search.set_callback(on_activated)
+        search.returnPressed.connect(on_return_pressed)
         search.setFocus()
 
         dialog.layout().addWidget(search)
@@ -1553,9 +1565,17 @@ class ImageView(QGraphicsView):
         # may not be delivered until the next event loop iteration, so the
         # crosshair redraw that follows would otherwise run with a stale False.
         self._mouse_in_view = True
-        if accepted != QDialog.DialogCode.Accepted:
+        if accepted != QDialog.DialogCode.Accepted or not concept_selected:
             return ""
-        return concept_selected.strip()
+
+        # Resolve synonym / common name → primary concept name.
+        try:
+            concept_selected = self._require_m3_service().get_concept_name(
+                concept_selected
+            )
+        except Exception:
+            pass
+        return concept_selected
 
     def _get_prompt_concepts(self):
         """Return concept suggestions for prompt_concept."""

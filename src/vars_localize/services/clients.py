@@ -365,6 +365,7 @@ class OniClient:
         self._session = session
         self._kb_concepts: Optional[List[str]] = None
         self._kb_parts: Optional[List[str]] = None
+        self._concept_name_cache: Dict[str, str] = {}
 
     def _url(self, path: str) -> str:
         """Build an absolute URL for this service.
@@ -415,6 +416,27 @@ class OniClient:
             rows = payload if isinstance(payload, list) else []
             self._kb_parts = [entry["name"] for entry in rows if "name" in entry]
         return self._kb_parts
+
+    def get_concept_name(self, concept: str) -> str:
+        """Resolve a concept (possibly a synonym or common name) to its primary name.
+
+        Args:
+            concept: Any concept name recognized by the KB.
+
+        Returns:
+            The primary/canonical concept name, or *concept* unchanged if
+            resolution fails.
+        """
+        if concept in self._concept_name_cache:
+            return self._concept_name_cache[concept]
+        try:
+            response = self._request("get", f"/concept/{concept}")
+            response.raise_for_status()
+            name: str = response.json().get("name") or concept
+        except Exception:
+            name = concept
+        self._concept_name_cache[concept] = name
+        return name
 
 
 class VampireSquidClient:
@@ -534,7 +556,9 @@ class VampireSquidClient:
         """
         response = self._request(
             "get",
-            self.MEDIA_BY_VIDEO_SEQUENCE_NAME + "/" + quote(video_sequence_name, safe=""),
+            self.MEDIA_BY_VIDEO_SEQUENCE_NAME
+            + "/"
+            + quote(video_sequence_name, safe=""),
         )
         payload = response.json()
         return payload if isinstance(payload, list) else []

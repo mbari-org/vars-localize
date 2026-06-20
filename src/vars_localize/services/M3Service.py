@@ -245,6 +245,17 @@ class M3Service:
         """
         return self._oni_client().get_all_concepts()
 
+    def get_concept_name(self, concept: str) -> str:
+        """Resolve concept to its primary/canonical name.
+
+        Args:
+            concept: Any concept name (primary, synonym, or common name).
+
+        Returns:
+            The primary concept name, or *concept* unchanged if resolution fails.
+        """
+        return self._oni_client().get_concept_name(concept)
+
     def get_imaged_moment_uuids(self, concept: str) -> List[str]:
         """Compatibility wrapper for AnnosaurusClient.get_imaged_moment_uuids.
 

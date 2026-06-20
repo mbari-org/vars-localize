@@ -1067,6 +1067,9 @@ class ImagedMomentTree(QWidget):
         if result != QDialog.DialogCode.Accepted or concept_to_set is None:
             return
 
+        # Resolve synonym / common name → primary concept name.
+        concept_to_set = self._m3.get_concept_name(concept_to_set)
+
         confirmed = QMessageBox.warning(
             self,
             "Confirm Observation Bulk Rename",

@@ -533,11 +533,19 @@ class SearchPanel(QDockWidget):
 
     def load_concept(self, concept):
         concept = (concept or "").strip()
-        if concept not in self.search_bar.get_concepts():
+        # Case-insensitive lookup so typed text matches regardless of capitalisation.
+        concept_lower = concept.lower()
+        matched = next(
+            (c for c in self.search_bar.get_concepts() if c.lower() == concept_lower),
+            None,
+        )
+        if matched is None:
             QMessageBox.warning(
                 self, "Invalid Concept", 'Concept "{}" is invalid.'.format(concept)
             )
             return
+        # Resolve synonym / common name → primary concept name.
+        concept = self._m3.get_concept_name(matched)
 
         self.set_search_mode("concept")
         self.concept = concept
@@ -705,6 +713,9 @@ class SearchPanel(QDockWidget):
         accepted = dialog.exec()
 
         concept_after = concept_field.text()
+        # Resolve to primary name (handles synonyms / common names).
+        if accepted and not delete_lock:
+            concept_after = self._m3.get_concept_name(concept_after)
         if accepted and not delete_lock and concept_after != concept_before:
 
             def _on_done(_):

@@ -443,3 +443,376 @@ def test_mouse_move_without_state_change_skips_full_redraw():
 
     assert redraw_calls["count"] == 0
     assert overlay_updates["count"] == 1
+
+
+def _make_box(x, y, w, h, observation_uuid="obs-1"):
+    from vars_localize.ui.BoundingBox import SourceBoundingBox
+
+    return SourceBoundingBox(
+        {"x": x, "y": y, "width": w, "height": h, "image_reference_uuid": "im"},
+        label="fish",
+        observation_uuid=observation_uuid,
+    )
+
+
+def test_exemplar_boxes_for_active_concept_returns_empty_without_active_concept():
+    from vars_localize.ui.ImageView import ImageView
+
+    view = ImageView.__new__(ImageView)
+    view._active_annotation_concept = None
+    view.observation_map = {
+        "obs-1": SimpleNamespace(
+            observation=SimpleNamespace(concept="fish", boxes=[_make_box(0, 0, 10, 10)])
+        )
+    }
+
+    assert view._exemplar_boxes_for_active_concept() == []
+
+
+def test_exemplar_boxes_for_active_concept_returns_empty_without_observation_map():
+    from vars_localize.ui.ImageView import ImageView
+
+    view = ImageView.__new__(ImageView)
+    view._active_annotation_concept = "fish"
+    view.observation_map = None
+
+    assert view._exemplar_boxes_for_active_concept() == []
+
+
+def test_exemplar_boxes_for_active_concept_filters_by_concept_and_excludes_video_boxes():
+    from vars_localize.ui.ImageView import ImageView
+
+    view = ImageView.__new__(ImageView)
+    view._active_annotation_concept = "fish"
+
+    fish_box = _make_box(0, 0, 10, 10, observation_uuid="obs-1")
+    fish_video_box = _make_box(50, 50, 10, 10, observation_uuid="obs-1")
+    sponge_box = _make_box(20, 20, 10, 10, observation_uuid="obs-2")
+
+    view.observation_map = {
+        "obs-1": SimpleNamespace(
+            observation=SimpleNamespace(
+                concept="fish", boxes=[fish_box], video_boxes=[fish_video_box]
+            )
+        ),
+        "obs-2": SimpleNamespace(
+            observation=SimpleNamespace(
+                concept="sponge", boxes=[sponge_box], video_boxes=[]
+            )
+        ),
+    }
+
+    assert view._exemplar_boxes_for_active_concept() == [fish_box]
+
+
+def test_can_find_similar_requires_assist_semantic_concept_and_exemplars():
+    from vars_localize.ui.ImageView import ImageView
+
+    view = ImageView.__new__(ImageView)
+    view._sam_assist_enabled = True
+    view._sam_semantic_enabled = True
+    view.sam3_service = SimpleNamespace(available=True)
+    view._active_annotation_concept = "fish"
+    view._exemplar_boxes_for_active_concept = lambda: [_make_box(0, 0, 10, 10)]
+
+    assert view.can_find_similar() is True
+
+    view._sam_assist_enabled = False
+    assert view.can_find_similar() is False
+    view._sam_assist_enabled = True
+
+    view._sam_semantic_enabled = False
+    assert view.can_find_similar() is False
+    view._sam_semantic_enabled = True
+
+    view.sam3_service = SimpleNamespace(available=False)
+    assert view.can_find_similar() is False
+    view.sam3_service = SimpleNamespace(available=True)
+
+    view._active_annotation_concept = None
+    assert view.can_find_similar() is False
+    view._active_annotation_concept = "fish"
+
+    view._exemplar_boxes_for_active_concept = lambda: []
+    assert view.can_find_similar() is False
+
+
+def test_start_sam_candidates_from_exemplars_noop_when_no_exemplars(monkeypatch):
+    import vars_localize.ui.ImageView as image_view_module
+    from vars_localize.ui.ImageView import ImageView
+
+    calls = {"run_async": 0}
+    monkeypatch.setattr(
+        image_view_module,
+        "run_async",
+        lambda *a, **k: calls.__setitem__("run_async", calls["run_async"] + 1),
+    )
+
+    view = ImageView.__new__(ImageView)
+    view._sam_assist_enabled = True
+    view._sam_semantic_enabled = True
+    view.moment = SimpleNamespace(imaged_moment=SimpleNamespace(uuid="im-1"))
+    view._exemplar_boxes_for_active_concept = lambda: []
+    view._notify_sam_status = lambda _status: None
+    view._build_sam_status = lambda: "status"
+
+    view._start_sam_candidates_from_exemplars("fish")
+
+    assert calls["run_async"] == 0
+
+
+def test_start_sam_candidates_from_exemplars_defers_until_embedding_ready(monkeypatch):
+    import vars_localize.ui.ImageView as image_view_module
+    from vars_localize.ui.ImageView import ImageView
+
+    calls = {"run_async": 0, "embed": 0}
+    monkeypatch.setattr(
+        image_view_module,
+        "run_async",
+        lambda *a, **k: calls.__setitem__("run_async", calls["run_async"] + 1),
+    )
+
+    view = ImageView.__new__(ImageView)
+    view._sam_assist_enabled = True
+    view._sam_semantic_enabled = True
+    view.moment = SimpleNamespace(imaged_moment=SimpleNamespace(uuid="im-1"))
+    view._exemplar_boxes_for_active_concept = lambda: [_make_box(0, 0, 10, 10)]
+    view._sam_ready_image_uuid = None
+    view._sam_failed_image_uuid = None
+    view._sam_pending_concept = "some-other-concept"
+    view._sam_pending_exemplar_concept = None
+    view._notify_sam_status = lambda _status: None
+    view._build_sam_status = lambda: "status"
+    view._maybe_start_sam_embedding = lambda: calls.__setitem__(
+        "embed", calls["embed"] + 1
+    )
+
+    view._start_sam_candidates_from_exemplars("fish")
+
+    assert calls["run_async"] == 0
+    assert calls["embed"] == 1
+    assert view._sam_pending_exemplar_concept == "fish"
+    assert view._sam_pending_concept is None
+
+
+def test_start_sam_candidates_from_exemplars_queries_with_xyxy_boxes(monkeypatch):
+    import vars_localize.ui.ImageView as image_view_module
+    from vars_localize.ui.ImageView import ImageView
+
+    captured = {}
+
+    def _fake_run_async(owner, fn, *args, on_result=None, on_error=None, **kwargs):
+        captured["fn"] = fn
+        captured["args"] = args
+        captured["on_result"] = on_result
+
+    monkeypatch.setattr(image_view_module, "run_async", _fake_run_async)
+
+    box = _make_box(10, 20, 30, 40)
+    view = ImageView.__new__(ImageView)
+    view._sam_assist_enabled = True
+    view._sam_semantic_enabled = True
+    view.moment = SimpleNamespace(imaged_moment=SimpleNamespace(uuid="im-1"))
+    view._exemplar_boxes_for_active_concept = lambda: [box]
+    view._sam_ready_image_uuid = "im-1"
+    view._sam_failed_image_uuid = None
+    view._sam_candidate_observation_uuid = "stale"
+    view._sam_candidate_concept = None
+    view._active_annotation_concept = "fish"
+    view._notify_sam_status = lambda _status: None
+    view._sam_query_boxes = lambda boxes_xyxy: []
+
+    view._start_sam_candidates_from_exemplars("fish")
+
+    assert captured["args"] == ([(10, 20, 40, 60)],)
+    assert view._sam_candidate_observation_uuid is None
+    assert view._sam_candidate_concept == "fish"
+
+
+def test_start_sam_candidates_from_exemplars_builds_candidates_on_result(monkeypatch):
+    import vars_localize.ui.ImageView as image_view_module
+    from vars_localize.ui.ImageView import ImageView
+
+    captured = {}
+
+    def _fake_run_async(owner, fn, *args, on_result=None, on_error=None, **kwargs):
+        captured["on_result"] = on_result
+
+    monkeypatch.setattr(image_view_module, "run_async", _fake_run_async)
+
+    box = _make_box(10, 20, 30, 40)
+    view = ImageView.__new__(ImageView)
+    view._sam_assist_enabled = True
+    view._sam_semantic_enabled = True
+    view.moment = SimpleNamespace(imaged_moment=SimpleNamespace(uuid="im-1"))
+    view._exemplar_boxes_for_active_concept = lambda: [box]
+    view._sam_ready_image_uuid = "im-1"
+    view._sam_failed_image_uuid = None
+    view._active_annotation_concept = "fish"
+    view._notify_sam_status = lambda _status: None
+    view._notify_sam_candidate_state = lambda: None
+    view._point_capability_text = lambda: "point ready"
+    view.redraw = lambda: None
+    view._make_candidate_boxes = lambda boxes, obs_uuid, concept: ["candidate-1"]
+
+    view._start_sam_candidates_from_exemplars("fish")
+    captured["on_result"]([(1, 2, 3, 4)])
+
+    assert view._sam_candidate_boxes == ["candidate-1"]
+    assert view._sam_candidate_index == 0
+
+
+def test_start_sam_candidates_from_exemplars_discards_stale_result(monkeypatch):
+    import vars_localize.ui.ImageView as image_view_module
+    from vars_localize.ui.ImageView import ImageView
+
+    captured = {}
+
+    def _fake_run_async(owner, fn, *args, on_result=None, on_error=None, **kwargs):
+        captured["on_result"] = on_result
+
+    monkeypatch.setattr(image_view_module, "run_async", _fake_run_async)
+
+    box = _make_box(10, 20, 30, 40)
+    view = ImageView.__new__(ImageView)
+    view._sam_assist_enabled = True
+    view._sam_semantic_enabled = True
+    view.moment = SimpleNamespace(imaged_moment=SimpleNamespace(uuid="im-1"))
+    view._exemplar_boxes_for_active_concept = lambda: [box]
+    view._sam_ready_image_uuid = "im-1"
+    view._sam_failed_image_uuid = None
+    view._active_annotation_concept = "fish"
+    view._notify_sam_status = lambda _status: None
+    view._notify_sam_candidate_state = lambda: None
+    view._sam_candidate_boxes = []
+    view._make_candidate_boxes = lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("should not build candidates for stale result")
+    )
+
+    view._start_sam_candidates_from_exemplars("fish")
+
+    # Active concept changed away before the async query returned.
+    view._active_annotation_concept = "sponge"
+    captured["on_result"]([(1, 2, 3, 4)])
+
+    assert view._sam_candidate_boxes == []
+
+
+def test_pending_exemplar_concept_resumes_after_embedding_ready():
+    from vars_localize.ui.ImageView import ImageView
+
+    calls = {"exemplars": []}
+
+    view = ImageView.__new__(ImageView)
+    view.moment = SimpleNamespace(imaged_moment=SimpleNamespace(uuid="im-1"))
+    view._sam_pending_concept = None
+    view._sam_pending_exemplar_concept = "fish"
+    view._sam_ready_image_uuid = None
+    view._sam_failed_image_uuid = "old"
+    view._sam_last_error_message = "old error"
+    view._notify_sam_status = lambda _status: None
+    view._build_sam_status = lambda: "status"
+    view._start_sam_candidates_for_concept = lambda concept: None
+    view._start_sam_candidates_from_exemplars = lambda concept: calls[
+        "exemplars"
+    ].append(concept)
+
+    # Simulate the embedding-ready `_on_result` closure body directly, since
+    # `_maybe_start_sam_embedding` builds it as a local function.
+    embedded_uuid = "im-1"
+    current_uuid = view.moment.imaged_moment.uuid
+    assert current_uuid == embedded_uuid
+    view._sam_ready_image_uuid = embedded_uuid
+    view._sam_failed_image_uuid = None
+    view._sam_last_error_message = None
+    view._notify_sam_status(view._build_sam_status())
+    pending_concept = view._sam_pending_concept
+    if pending_concept:
+        view._sam_pending_concept = None
+        view._start_sam_candidates_for_concept(pending_concept)
+    pending_exemplar_concept = view._sam_pending_exemplar_concept
+    if pending_exemplar_concept:
+        view._sam_pending_exemplar_concept = None
+        view._start_sam_candidates_from_exemplars(pending_exemplar_concept)
+
+    assert calls["exemplars"] == ["fish"]
+    assert view._sam_pending_exemplar_concept is None
+
+
+def test_clear_sam_state_resets_pending_exemplar_concept():
+    from vars_localize.ui.ImageView import ImageView
+
+    view = ImageView.__new__(ImageView)
+    view._sam_pending_exemplar_concept = "fish"
+    view._sam_candidate_boxes = ["x"]
+    view._sam_candidate_index = 1
+    view._sam_candidate_observation_uuid = "obs-1"
+    view._sam_candidate_concept = "fish"
+    view._sam_pending_concept = "fish"
+    view._sam_hover_box = object()
+    view._sam_hover_inflight = True
+    view._sam_last_hover_point = object()
+    view._notify_sam_candidate_state = lambda: None
+    view._notify_sam_status = lambda _status: None
+    view._build_sam_status = lambda: "status"
+
+    view._clear_sam_state(reset_embedding=False)
+
+    assert view._sam_pending_exemplar_concept is None
+
+
+def test_set_sam_prompt_modes_resets_pending_exemplar_concept_when_semantic_disabled():
+    from vars_localize.ui.ImageView import ImageView
+
+    view = ImageView.__new__(ImageView)
+    view._sam_pending_exemplar_concept = "fish"
+    view._sam_pending_concept = "fish"
+    view._sam_candidate_boxes = ["x"]
+    view._sam_candidate_index = 1
+    view._sam_hover_box = object()
+    view._sam_hover_inflight = True
+    view._sam_last_hover_point = object()
+    view._notify_sam_candidate_state = lambda: None
+    view._notify_sam_status = lambda _status: None
+    view._build_sam_status = lambda: "status"
+    view.redraw = lambda: None
+
+    view.set_sam_prompt_modes(semantic_enabled=False, point_enabled=True)
+
+    assert view._sam_pending_exemplar_concept is None
+
+
+def test_start_sam_candidates_for_concept_clears_pending_exemplar_concept(monkeypatch):
+    import vars_localize.ui.ImageView as image_view_module
+    from vars_localize.ui.ImageView import ImageView
+
+    monkeypatch.setattr(image_view_module, "run_async", lambda *a, **k: None)
+
+    view = ImageView.__new__(ImageView)
+    view._sam_assist_enabled = True
+    view._sam_semantic_enabled = True
+    view.moment = SimpleNamespace(imaged_moment=SimpleNamespace(uuid="im-1"))
+    view._sam_ready_image_uuid = None
+    view._sam_failed_image_uuid = None
+    view._sam_pending_exemplar_concept = "sponge"
+    view._notify_sam_status = lambda _status: None
+    view._build_sam_status = lambda: "status"
+    view._maybe_start_sam_embedding = lambda: None
+
+    view._start_sam_candidates_for_concept("fish")
+
+    assert view._sam_pending_concept == "fish"
+    assert view._sam_pending_exemplar_concept is None
+
+
+def test_find_similar_from_exemplars_uses_active_concept():
+    from vars_localize.ui.ImageView import ImageView
+
+    calls = []
+    view = ImageView.__new__(ImageView)
+    view._active_annotation_concept = "fish"
+    view._start_sam_candidates_from_exemplars = lambda concept: calls.append(concept)
+
+    view.find_similar_from_exemplars()
+
+    assert calls == ["fish"]

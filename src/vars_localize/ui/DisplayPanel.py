@@ -35,9 +35,18 @@ class DisplayPanel(QWidget):
         self.sam_reject.setToolTip("Reject current SAM candidate")
         self.sam_reject.clicked.connect(self._reject_sam_candidate)
 
+        self.sam_find_similar = QPushButton("Find Similar")
+        self.sam_find_similar.setToolTip(
+            "Find more instances of the active annotation concept using its "
+            "existing boxes as visual exemplars"
+        )
+        self.sam_find_similar.clicked.connect(self._find_similar)
+        self.sam_find_similar.setEnabled(False)
+
         self.sam_controls.layout().addWidget(self.sam_label)
         self.sam_controls.layout().addWidget(self.sam_accept)
         self.sam_controls.layout().addWidget(self.sam_reject)
+        self.sam_controls.layout().addWidget(self.sam_find_similar)
         self.sam_controls.layout().addStretch(1)
 
         self.image_view = ImageView(parent=self)
@@ -51,22 +60,28 @@ class DisplayPanel(QWidget):
         self._set_sam_candidate_state(False, 0, 0)
 
     def _set_sam_candidate_state(self, visible: bool, index: int, total: int):
-        self.sam_controls.setVisible(visible)
+        self.sam_accept.setVisible(visible)
+        self.sam_reject.setVisible(visible)
         self.sam_accept.setEnabled(visible)
         self.sam_reject.setEnabled(visible)
         if visible:
             self.sam_label.setText("SAM candidate {}/{}".format(index + 1, total))
         else:
             self.sam_label.setText("SAM candidates")
+        self.sam_find_similar.setEnabled(self.image_view.can_find_similar())
 
     def _set_sam_status(self, status: str):
         self.sam_status_label.setText("SAM: {}".format(status))
+        self.sam_find_similar.setEnabled(self.image_view.can_find_similar())
 
     def _accept_sam_candidate(self):
         self.image_view.accept_sam_candidate()
 
     def _reject_sam_candidate(self):
         self.image_view.reject_sam_candidate()
+
+    def _find_similar(self):
+        self.image_view.find_similar_from_exemplars()
 
     def load_entry(self, entry: EntryTreeItem):
         """Load an entry into the image view and redraw.

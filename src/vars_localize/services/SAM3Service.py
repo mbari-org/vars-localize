@@ -379,6 +379,39 @@ class SAM3Service:
                 return normalized
             return self._normalize_boxes(boxes)
 
+    def query_boxes(
+        self, boxes_xyxy: Sequence[Tuple[float, float, float, float]]
+    ) -> List[Tuple[int, int, int, int]]:
+        """Use existing boxes as positive visual exemplars to find similar instances."""
+        with self._predictor_lock:
+            if not self.semantic_available:
+                raise RuntimeError("SAM3 semantic mode is unavailable")
+            if self._semantic_features is None or self._src_shape is None:
+                return []
+            if not boxes_xyxy:
+                return []
+
+            predictor = cast(Any, self._semantic_predictor)
+            self._reset_semantic_prompt_state(predictor)
+            try:
+                masks, boxes = predictor.inference_features(
+                    self._semantic_features,
+                    src_shape=self._src_shape,
+                    bboxes=list(boxes_xyxy),
+                    text=None,
+                )
+            finally:
+                self._reset_semantic_prompt_state(predictor)
+                try:
+                    self._prime_point_prompt_context(predictor)
+                except Exception as exc:
+                    logger.warning("Neutral point context reset failed: {}", exc)
+
+            normalized = self._normalize_mask_boxes(masks)
+            if normalized:
+                return normalized
+            return self._normalize_boxes(boxes)
+
     def query_point(self, x: int, y: int) -> List[Tuple[int, int, int, int]]:
         with self._predictor_lock:
             if not self.point_available:

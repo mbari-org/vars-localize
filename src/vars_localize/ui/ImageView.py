@@ -115,6 +115,7 @@ class ImageView(QGraphicsView):
         self._sam_candidate_observation_uuid = None
         self._sam_candidate_concept: Optional[str] = None
         self._sam_pending_concept: Optional[str] = None
+        self._sam_pending_exemplar_concept: Optional[str] = None
         self._sam_hover_box: Optional[SourceBoundingBox] = None
         self._sam_hover_inflight = False
         self._sam_last_hover_point = None
@@ -388,6 +389,7 @@ class ImageView(QGraphicsView):
             self._sam_candidate_boxes = []
             self._sam_candidate_index = 0
             self._sam_pending_concept = None
+            self._sam_pending_exemplar_concept = None
 
         if not self._sam_point_enabled:
             self._sam_hover_box = None
@@ -414,6 +416,7 @@ class ImageView(QGraphicsView):
         self._sam_candidate_observation_uuid = None
         self._sam_candidate_concept = None
         self._sam_pending_concept = None
+        self._sam_pending_exemplar_concept = None
         self._sam_hover_box = None
         self._sam_hover_inflight = False
         self._sam_last_hover_point = None
@@ -536,6 +539,10 @@ class ImageView(QGraphicsView):
             if pending_concept:
                 self._sam_pending_concept = None
                 self._start_sam_candidates_for_concept(pending_concept)
+            pending_exemplar_concept = self._sam_pending_exemplar_concept
+            if pending_exemplar_concept:
+                self._sam_pending_exemplar_concept = None
+                self._start_sam_candidates_from_exemplars(pending_exemplar_concept)
 
         def _on_error(err):
             current_uuid = self.moment.imaged_moment.uuid if self.moment else None
@@ -599,6 +606,7 @@ class ImageView(QGraphicsView):
                 return
             self._notify_sam_status("SAM waiting for embedding to query concept...")
             self._sam_pending_concept = concept
+            self._sam_pending_exemplar_concept = None
             self._maybe_start_sam_embedding()
             return
 
@@ -635,6 +643,118 @@ class ImageView(QGraphicsView):
             self,
             self._sam_query_text,
             concept,
+            on_result=_on_result,
+            on_error=_on_error,
+        )
+
+    def _sam_query_boxes(self, boxes_xyxy):
+        if self.sam3_service is None:
+            return []
+        return self.sam3_service.query_boxes(boxes_xyxy)
+
+    def _exemplar_boxes_for_active_concept(self) -> List[SourceBoundingBox]:
+        concept = self._active_annotation_concept
+        if not concept or not self.observation_map:
+            return []
+        boxes: List[SourceBoundingBox] = []
+        for item in self.observation_map.values():
+            obs = item.observation
+            if obs.concept != concept:
+                continue
+            boxes.extend(list(obs.boxes))
+        return boxes
+
+    def can_find_similar(self) -> bool:
+        if not self._sam_assist_enabled or not getattr(
+            self, "_sam_semantic_enabled", True
+        ):
+            return False
+        if self.sam3_service is None or not self.sam3_service.available:
+            return False
+        if not self._active_annotation_concept:
+            return False
+        return bool(self._exemplar_boxes_for_active_concept())
+
+    def find_similar_from_exemplars(self):
+        self._start_sam_candidates_from_exemplars(self._active_annotation_concept)
+
+    def _start_sam_candidates_from_exemplars(self, concept: Optional[str]):
+        if not self._sam_assist_enabled:
+            self._notify_sam_status(self._build_sam_status())
+            return
+        if not getattr(self, "_sam_semantic_enabled", True):
+            self._notify_sam_status(self._build_sam_status())
+            return
+        if self.moment is None:
+            self._notify_sam_status(self._build_sam_status())
+            return
+        if not concept:
+            self._notify_sam_status(
+                "SAM: no active annotation concept for Find Similar"
+            )
+            return
+
+        exemplars = self._exemplar_boxes_for_active_concept()
+        if not exemplars:
+            self._notify_sam_status(
+                "SAM: no existing boxes for '{}' to use as exemplars".format(concept)
+            )
+            return
+
+        moment_uuid = self.moment.imaged_moment.uuid
+        if self._sam_ready_image_uuid != moment_uuid:
+            if self._sam_failed_image_uuid == moment_uuid:
+                self._notify_sam_status(self._build_sam_status())
+                return
+            self._notify_sam_status(
+                "SAM waiting for embedding to find similar to '{}'...".format(concept)
+            )
+            self._sam_pending_exemplar_concept = concept
+            self._sam_pending_concept = None
+            self._maybe_start_sam_embedding()
+            return
+
+        boxes_xyxy = [
+            (box.x(), box.y(), box.x() + box.width(), box.y() + box.height())
+            for box in exemplars
+        ]
+
+        self._sam_candidate_observation_uuid = None
+        self._sam_candidate_concept = concept
+        self._notify_sam_status(
+            "SAM querying {} exemplar(s) for concept '{}'...".format(
+                len(boxes_xyxy), concept
+            )
+        )
+
+        def _on_result(boxes):
+            if self.moment is None:
+                return
+            current_uuid = self.moment.imaged_moment.uuid
+            if current_uuid != moment_uuid:
+                return
+            if self._active_annotation_concept != concept:
+                return
+
+            candidates = self._make_candidate_boxes(boxes, None, concept)
+            self._sam_candidate_boxes = candidates
+            self._sam_candidate_index = 0
+            self._notify_sam_candidate_state()
+            self._notify_sam_status(
+                "SAM ready: {} candidate(s) from {} exemplar(s), {}".format(
+                    len(candidates), len(boxes_xyxy), self._point_capability_text()
+                )
+            )
+            self.redraw()
+
+        def _on_error(err):
+            logger.error("Exemplar query failed: {}", err)
+            self._notify_sam_status("SAM exemplar query failed")
+
+        run_async(
+            self,
+            self._sam_query_boxes,
+            boxes_xyxy,
             on_result=_on_result,
             on_error=_on_error,
         )

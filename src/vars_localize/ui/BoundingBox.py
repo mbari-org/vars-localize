@@ -296,6 +296,12 @@ class BoundingBoxItem(QGraphicsObject):
         super().hoverLeaveEvent(event)
 
     def mousePressEvent(self, event):
+        # Deliberately never call super() here: Qt's default QGraphicsItem
+        # press handling would select the item immediately on press (even
+        # for what turns out to be a drag-to-pan). Selection is instead
+        # driven entirely by ImageView, on release, only for a true click
+        # (press+release with negligible movement) -- see
+        # ImageView._handle_box_click_selection.
         if event.button() == Qt.MouseButton.LeftButton and self.editable:
             self._resize_edge = self._edge_at(event.pos())
         else:
@@ -307,16 +313,12 @@ class BoundingBoxItem(QGraphicsObject):
             )
             self._press_scene_pos = event.scenePos()
             self.resizeStarted.emit()
-            event.accept()
-            return
-        super().mousePressEvent(event)
+        event.accept()
 
     def mouseMoveEvent(self, event):
         if self._resize_edge is not None:
             self._apply_resize(event.scenePos())
-            event.accept()
-            return
-        super().mouseMoveEvent(event)
+        event.accept()
 
     def mouseReleaseEvent(self, event):
         if self._resize_edge is not None:
@@ -324,11 +326,7 @@ class BoundingBoxItem(QGraphicsObject):
             if self._commit_geometry_to_source():
                 self.geometryCommitted.emit(self)
             self.resizeFinished.emit()
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)
-        if self._commit_geometry_to_source():
-            self.geometryCommitted.emit(self)
+        event.accept()
 
     def contextMenuEvent(self, event):
         if not self.editable:
@@ -429,9 +427,3 @@ class BoundingBoxItem(QGraphicsObject):
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRect(self.rect())
-
-        if self.isSelected():
-            ring_pen = QPen(QColor(PALETTE["selection_ring"]), 1, Qt.PenStyle.DashLine)
-            ring_pen.setCosmetic(True)
-            painter.setPen(ring_pen)
-            painter.drawRect(self.rect().adjusted(-4, -4, 4, 4))

@@ -138,6 +138,7 @@ class ImageView(QGraphicsView):
     MIN_SCALE = 0.1
     MAX_SCALE = 20.0
     ZOOM_STEP = 1.15
+    CLICK_DRAG_THRESHOLD = 4
 
     def __init__(self, parent=None):
         super(ImageView, self).__init__(parent)
@@ -199,6 +200,12 @@ class ImageView(QGraphicsView):
         self._pan_start_pos: Optional[QPoint] = None
         self._pan_start_scroll: Optional[tuple] = None
         self._current_cursor_shape: Optional[Qt.CursorShape] = None
+
+        # Click-to-select state: a click (no drag) on overlapping boxes
+        # cycles through them on repeated clicks at the same spot.
+        self._last_select_click_pos: Optional[QPoint] = None
+        self._last_select_candidates: List[BoundingBoxItem] = []
+        self._last_select_cycle_index = 0
 
         # Saved view state while previewing a SAM candidate under the accept/reject buttons.
         self._focus_preview_saved: Optional[tuple] = None
@@ -2284,13 +2291,54 @@ class ImageView(QGraphicsView):
         super().mouseMoveEvent(event)
         self._update_mouse_overlay()
 
+    def _handle_box_click_selection(self, viewport_pos: QPoint):
+        """Select the box under a click, cycling through overlapping boxes
+        on repeated clicks at (roughly) the same spot."""
+        if not self._has_scene():
+            return
+        scene_pos = self.mapToScene(viewport_pos)
+        candidates = [
+            it
+            for it in self.scene().items(scene_pos)
+            if isinstance(it, BoundingBoxItem) and it.editable
+        ]
+        if not candidates:
+            self._last_select_click_pos = None
+            self._last_select_candidates = []
+            self._last_select_cycle_index = 0
+            self.scene().clearSelection()
+            return
+
+        same_spot = (
+            self._last_select_click_pos is not None
+            and (viewport_pos - self._last_select_click_pos).manhattanLength()
+            <= self.CLICK_DRAG_THRESHOLD
+            and candidates == self._last_select_candidates
+        )
+        self._last_select_cycle_index = (
+            (self._last_select_cycle_index + 1) % len(candidates) if same_spot else 0
+        )
+        self._last_select_click_pos = viewport_pos
+        self._last_select_candidates = candidates
+
+        target = candidates[self._last_select_cycle_index]
+        self.scene().clearSelection()
+        target.setSelected(True)
+
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self._panning:
+            press_pos = self._pan_start_pos
             self._panning = False
             self._pan_start_pos = None
             self._pan_start_scroll = None
             self.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
             self._current_cursor_shape = Qt.CursorShape.OpenHandCursor
+            if (
+                press_pos is not None
+                and (event.pos() - press_pos).manhattanLength()
+                <= self.CLICK_DRAG_THRESHOLD
+            ):
+                self._handle_box_click_selection(event.pos())
             super().mouseReleaseEvent(event)
             return
 

@@ -4,36 +4,37 @@ from __future__ import annotations
 
 from typing import Callable, List, Optional, Any, cast
 
-from PyQt6.QtCore import Qt, QPoint, QPointF, QRectF, QLineF, QSizeF
+from PyQt6.QtCore import Qt, QPoint, QPointF, QRectF, QLineF
 from PyQt6.QtGui import (
     QEnterEvent,
     QImage,
     QResizeEvent,
     QMouseEvent,
+    QWheelEvent,
     QPixmap,
     QColor,
     QKeyEvent,
     QPen,
-    QFont,
+    QPainter,
 )
 from PyQt6.QtWidgets import (
     QGraphicsView,
     QGraphicsScene,
+    QGraphicsPixmapItem,
+    QGraphicsRectItem,
     QGraphicsLineItem,
     QDialog,
     QVBoxLayout,
     QPushButton,
     QMessageBox,
+    QMenu,
+    QLabel,
 )
 
 from vars_localize.ui.ConceptSearchbar import ConceptSearchbar
 from vars_localize.ui.EntryTree import EntryTreeItem
 from vars_localize.models import ImagedMomentEntry
-from vars_localize.ui.BoundingBox import (
-    BoundingBoxManager,
-    GraphicsBoundingBox,
-    SourceBoundingBox,
-)
+from vars_localize.ui.BoundingBox import BoundingBoxItem, SourceBoundingBox
 from vars_localize.ui.PropertiesDialog import PropertiesDialog
 from vars_localize.ui.theme import PALETTE
 from vars_localize.services import M3Service
@@ -45,9 +46,98 @@ from vars_localize.util.utils import center_window
 logger = get_logger("ImageView")
 
 
+class _MinimapView(QGraphicsView):
+    """Small always-visible overview of the full image with a viewport indicator.
+
+    Uses its own private scene containing only the image pixmap -- box/label
+    annotations and SAM overlays from the main view never appear here.
+    """
+
+    def __init__(self, main_view: "ImageView", parent=None):
+        super().__init__(QGraphicsScene(), parent)
+        self._main = main_view
+        self._pixmap_item: Optional[QGraphicsPixmapItem] = None
+        self.setInteractive(False)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setRenderHints(
+            QPainter.RenderHint.Antialiasing | QPainter.RenderHint.SmoothPixmapTransform
+        )
+        self.setFixedSize(180, 140)
+        self.setStyleSheet(
+            "QGraphicsView {{ border: 1px solid {0}; background-color: {1}; }}".format(
+                PALETTE["border"], PALETTE["bg_subtle"]
+            )
+        )
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.hide()
+
+    def set_pixmap(self, pixmap: Optional[QPixmap]):
+        if pixmap is None or pixmap.isNull():
+            if self._pixmap_item is not None:
+                self.scene().removeItem(self._pixmap_item)
+                self._pixmap_item = None
+            self.hide()
+            return
+        if self._pixmap_item is None:
+            self._pixmap_item = self.scene().addPixmap(pixmap)
+        else:
+            self._pixmap_item.setPixmap(pixmap)
+        self._pixmap_item.setPos(0, 0)
+        self.scene().setSceneRect(0, 0, pixmap.width(), pixmap.height())
+        self.fitInView(self._pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
+
+    def reposition(self):
+        margin = 10
+        parent = self.parentWidget()
+        if parent is None:
+            return
+        self.move(parent.width() - self.width() - margin, margin)
+
+    def update_visibility(self):
+        if self._pixmap_item is None:
+            self.hide()
+            return
+        current_scale = self._main.transform().m11()
+        self.setVisible(current_scale > self._main._fit_scale() * 1.02)
+
+    def drawForeground(self, painter: QPainter, rect: QRectF) -> None:
+        super().drawForeground(painter, rect)
+        if self._pixmap_item is None:
+            return
+        visible_scene_rect = self._main.mapToScene(
+            self._main.viewport().rect()
+        ).boundingRect()
+        pen = QPen(QColor(PALETTE["accent"]), 2)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+        fill = QColor(PALETTE["accent"])
+        fill.setAlpha(40)
+        painter.setBrush(fill)
+        painter.drawRect(visible_scene_rect)
+
+    def wheelEvent(self, event) -> None:
+        event.ignore()
+
+    def mousePressEvent(self, event) -> None:
+        self._navigate_to(event.pos())
+
+    def mouseMoveEvent(self, event) -> None:
+        if event.buttons() & Qt.MouseButton.LeftButton:
+            self._navigate_to(event.pos())
+
+    def _navigate_to(self, viewport_pos: QPoint):
+        self._main.centerOn(self.mapToScene(viewport_pos))
+        self._main._sync_minimap()
+
+
 class ImageView(QGraphicsView):
     SAM_MIN_AREA = 100
     SAM_OVERLAP_IOU = 0.2
+
+    MIN_SCALE = 0.1
+    MAX_SCALE = 20.0
+    ZOOM_STEP = 1.15
 
     def __init__(self, parent=None):
         super(ImageView, self).__init__(parent)
@@ -58,7 +148,21 @@ class ImageView(QGraphicsView):
 
         self.image_scene = QGraphicsScene()
         self.setScene(self.image_scene)
-        self.refit()
+        self.scene().setBackgroundBrush(QColor(PALETTE["bg_subtle"]))
+        self.scene().selectionChanged.connect(self._on_scene_selection_changed)
+
+        # Zoom anchoring is done manually in wheelEvent (using the event's own
+        # position) rather than via AnchorUnderMouse, which re-queries the OS
+        # cursor position and can desync from the wheel event's coordinates.
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.NoAnchor)
+        self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorViewCenter)
+        self.setRenderHints(
+            QPainter.RenderHint.Antialiasing | QPainter.RenderHint.SmoothPixmapTransform
+        )
+        # Floating child widgets over the viewport (minimap, status/ancillary
+        # labels) get corrupted by QGraphicsView's scroll-blit optimization
+        # unless the viewport always fully repaints.
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
 
         self.observation_uuid = None
         self.observer = None
@@ -67,8 +171,7 @@ class ImageView(QGraphicsView):
         self.enabled_observations = None
 
         self.pixmap_src = None
-        self.pixmap_scalar = None
-        self.pixmap_pos = None
+        self.pixmap_item: Optional[QGraphicsPixmapItem] = None
 
         self.select_next = None
         self.select_prev = None
@@ -78,26 +181,50 @@ class ImageView(QGraphicsView):
         self.m3_service = None
         self.sam3_service = None
 
-        # Graphical box selection
+        # Graphical box selection / interaction state.
         self.pt_1 = None
         self.pt_2 = None
         self.selected_box = None
-        self.hovered_box = None
-        self.mouse_line_pen = QPen(QColor(PALETTE["crosshairs"]))
-        self.mouse_hline = QLineF()
-        self.mouse_vline = QLineF()
+        self.resize_type = False
+        self._suppress_selection_signal = False
+        self._box_items: List[BoundingBoxItem] = []
+        self._drag_rect_item: Optional[QGraphicsRectItem] = None
+        self._sam_candidate_item: Optional[QGraphicsRectItem] = None
+        self._sam_hover_item: Optional[QGraphicsRectItem] = None
         self._crosshair_h_item: Optional[QGraphicsLineItem] = None
         self._crosshair_v_item: Optional[QGraphicsLineItem] = None
 
-        self.hov_tl_rect = None
-        self.hov_tr_rect = None
-        self.hov_bl_rect = None
-        self.hov_br_rect = None
-        self.resize_type = None
-        self.resize_offset = None
-        self._hover_handle_type = 0
+        # Click+drag pans by default; Ctrl+click+drag draws a new box instead.
+        self._panning = False
+        self._pan_start_pos: Optional[QPoint] = None
+        self._pan_start_scroll: Optional[tuple] = None
+        self._current_cursor_shape: Optional[Qt.CursorShape] = None
 
-        self.hov_pt_1 = None
+        # Saved view state while previewing a SAM candidate under the accept/reject buttons.
+        self._focus_preview_saved: Optional[tuple] = None
+
+        self._user_has_zoomed = False
+        self._minimap: Optional[_MinimapView] = _MinimapView(
+            self, parent=self.viewport()
+        )
+
+        self._status_label = QLabel(self.viewport())
+        self._status_label.setStyleSheet(
+            "color: {}; background: transparent; font-family: 'Courier New';".format(
+                PALETTE["fg_primary"]
+            )
+        )
+        self._status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._status_label.hide()
+
+        self._ancillary_label = QLabel(self.viewport())
+        self._ancillary_label.setStyleSheet(
+            "color: {}; background: transparent; font-family: 'Courier New';".format(
+                PALETTE["fg_primary"]
+            )
+        )
+        self._ancillary_label.hide()
+
         self._image_loading = False
         self._image_loading_uuid = None
         self._image_loading_error = None
@@ -129,10 +256,6 @@ class ImageView(QGraphicsView):
         self._sam_overlap_iou = self.SAM_OVERLAP_IOU
         self._video_data_request_uuid = None
         self._active_annotation_concept: Optional[str] = None
-
-        # Cache scaled pixmap by (source cache key, view width, view height).
-        self._scaled_pixmap_key: Optional[tuple[int, int, int]] = None
-        self._scaled_pixmap: Optional[QPixmap] = None
 
     def configure_sam_params(self, min_area: int, overlap_iou: float):
         self._sam_min_area = max(1, int(min_area))
@@ -196,6 +319,54 @@ class ImageView(QGraphicsView):
     ):
         self._observation_select_callback = callback
 
+    def _has_scene(self) -> bool:
+        try:
+            return self.scene() is not None
+        except RuntimeError:
+            return False
+
+    def _clear_scene_selection(self):
+        if not self._has_scene():
+            return
+        self._suppress_selection_signal = True
+        try:
+            self.scene().clearSelection()
+        finally:
+            self._suppress_selection_signal = False
+
+    def _find_box_item(self, box: SourceBoundingBox) -> Optional[BoundingBoxItem]:
+        for item in self._box_items:
+            if item.source is box:
+                return item
+        return None
+
+    def _refresh_highlighting(self):
+        for item in self._box_items:
+            item.set_highlighted(self._box_is_highlighted(item.source))
+
+    def _on_scene_selection_changed(self):
+        if self._suppress_selection_signal:
+            return
+        selected = [
+            it for it in self.scene().selectedItems() if isinstance(it, BoundingBoxItem)
+        ]
+        if selected:
+            box_item = selected[0]
+            self.selected_box = box_item.source
+            new_obs_uuid = box_item.source.observation_uuid
+            if new_obs_uuid and new_obs_uuid != self.observation_uuid:
+                self.observation_uuid = new_obs_uuid
+                if (
+                    self._observation_select_callback is not None
+                    and self.observation_map
+                ):
+                    entry = self.observation_map.get(new_obs_uuid)
+                    if entry is not None:
+                        self._observation_select_callback(entry)
+        else:
+            self.selected_box = None
+        self._refresh_highlighting()
+
     def set_annotation_focus(
         self,
         concept_filter: Optional[str] = None,
@@ -225,6 +396,7 @@ class ImageView(QGraphicsView):
         else:
             self.observation_uuid = None
             self.selected_box = None
+        self._clear_scene_selection()
         self._sam_hover_box = None
         if concept_changed:
             self._sam_candidate_boxes = []
@@ -856,6 +1028,12 @@ class ImageView(QGraphicsView):
             return
         if self.pixmap_src is None or self.moment is None:
             return
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            # Ctrl is reserved for drawing a new box; hide any SAM suggestion while held.
+            if self._sam_hover_box is not None:
+                self._sam_hover_box = None
+                self._update_mouse_overlay()
+            return
         if event.buttons() & Qt.MouseButton.LeftButton:
             return
         if self.resize_type:
@@ -888,7 +1066,6 @@ class ImageView(QGraphicsView):
 
         def _on_result(boxes):
             if not self._sam_assist_enabled:
-                # log("[SAM] hover result ignored: SAM assist disabled", level=1)
                 return
             if not self._mouse_in_view:
                 self._sam_hover_box = None
@@ -898,7 +1075,6 @@ class ImageView(QGraphicsView):
             self._sam_hover_box = None
             boxes = self._filter_point_prompt_boxes(boxes)
             if not boxes:
-                # log("[SAM] hover produced no boxes after filter", level=1)
                 self.redraw()
                 return
 
@@ -917,18 +1093,8 @@ class ImageView(QGraphicsView):
                 concept,
                 apply_overlap_filter=False,
             )
-            # log("[SAM] hover candidate boxes after overlap filter: {}".format(len(candidates)), level=1)
             if candidates:
                 self._sam_hover_box = candidates[0]
-                # log(
-                #     "[SAM] hover selected candidate: x={}, y={}, w={}, h={}".format(
-                #         self._sam_hover_box.x(),
-                #         self._sam_hover_box.y(),
-                #         self._sam_hover_box.width(),
-                #         self._sam_hover_box.height(),
-                #     ),
-                #     level=1,
-                # )
             if self.sam3_service is not None and self.sam3_service.available:
                 self._notify_sam_status(
                     "SAM ready: {}, {}".format(
@@ -938,7 +1104,6 @@ class ImageView(QGraphicsView):
             self.redraw()
 
         def _on_error(err):
-            # log("[SAM] hover query failed:\n{}".format(err), level=2)
             self._notify_sam_status("SAM point prompt query failed")
 
         def _on_finished():
@@ -960,121 +1125,7 @@ class ImageView(QGraphicsView):
             on_finished=_on_finished,
         )
 
-    def redraw(self):
-        """Redraw the scene with image, overlays, and interaction guides."""
-        self.clear()
-        self.refit()
-        self.scene().setBackgroundBrush(QColor(PALETTE["bg_subtle"]))
-        if self.pixmap_src:  # Image loaded, draw image + relevant components
-            self.draw_pixmap(self.pixmap_src)
-
-            self.draw_ancillary_data()
-
-            if self.enabled_observations:
-                for uuid, enabled in self.enabled_observations.items():
-                    if not enabled:
-                        continue
-
-                    item = self.observation_map[uuid]
-                    observation = item.observation
-                    box_manager = observation.box_manager
-                    boxes = observation.boxes
-                    video_boxes = observation.video_boxes
-                    for box in boxes:
-                        box_item = self.draw_bounding_box(box, box_manager)
-                        if self._box_is_highlighted(box):
-                            box_item.set_highlighted(True)
-                        if self.hovered_box == box:
-                            self.draw_drag_corners(box_item)
-                    for video_box in video_boxes:
-                        video_box_item = self.draw_bounding_box(
-                            video_box,
-                            box_manager,
-                            editable=False,
-                        )
-                        if self._box_is_highlighted(video_box):
-                            video_box_item.set_highlighted(True)
-
-            sam_candidate = self._current_sam_candidate
-            if sam_candidate is not None:
-                top_left = self.get_scene_rel_point(
-                    QPointF(sam_candidate.x(), sam_candidate.y())
-                )
-                self.scene().addRect(
-                    QRectF(
-                        QPointF(top_left),
-                        QSizeF(
-                            sam_candidate.width() * self.pixmap_scalar,
-                            sam_candidate.height() * self.pixmap_scalar,
-                        ),
-                    ),
-                    QPen(QColor(PALETTE["success"]), 2, Qt.PenStyle.DashLine),
-                )
-
-            if self._mouse_in_view and self._sam_hover_box is not None:
-                hover_top_left = self.get_scene_rel_point(
-                    QPointF(self._sam_hover_box.x(), self._sam_hover_box.y())
-                )
-                self.scene().addRect(
-                    QRectF(
-                        QPointF(hover_top_left),
-                        QSizeF(
-                            self._sam_hover_box.width() * self.pixmap_scalar,
-                            self._sam_hover_box.height() * self.pixmap_scalar,
-                        ),
-                    ),
-                    QPen(QColor(PALETTE["warning"]), 2, Qt.PenStyle.DashLine),
-                )
-
-            if self._mouse_in_view:
-                handle_type = self.resize_type or self._hover_handle_type
-                if handle_type in (1, 4):
-                    self.setCursor(Qt.CursorShape.SizeFDiagCursor)
-                elif handle_type in (2, 3):
-                    self.setCursor(Qt.CursorShape.SizeBDiagCursor)
-                else:
-                    self.setCursor(Qt.CursorShape.BlankCursor)
-            else:
-                self.setCursor(Qt.CursorShape.ArrowCursor)
-
-            drag_rect = self.calc_drag_rect()
-            if drag_rect:  # Drag rectangle should be drawn
-                top_left = self.get_scene_rel_point(
-                    QPointF(drag_rect.x(), drag_rect.y())
-                )
-                scaled_size = drag_rect.size() * self.pixmap_scalar
-                self.scene().addRect(
-                    QRectF(QPointF(top_left), scaled_size),
-                    QColor(PALETTE["accent_alt"]),
-                )
-        else:  # No image loaded
-            if self._image_loading:
-                msg = "Loading image..."
-            elif self._image_loading_error:
-                msg = self._image_loading_error
-            else:
-                msg = "No image loaded."
-            text_item = self.scene().addText(msg, QFont("Courier New"))
-            text_item.setDefaultTextColor(QColor(PALETTE["fg_primary"]))
-            text_item.setPos(
-                self.width() / 2 - text_item.boundingRect().width() / 2,
-                self.height() / 2 - text_item.boundingRect().height() / 2,
-            )
-            self.setCursor(Qt.CursorShape.ArrowCursor)
-
-        self._update_mouse_overlay()
-
-    def clear(self):
-        """Clear scene items and reset all bounding box managers."""
-        self.scene().clear()
-        self._crosshair_h_item = None
-        self._crosshair_v_item = None
-        if self.observation_map:
-            for box_manager in [
-                entry.observation.box_manager for entry in self.observation_map.values()
-            ]:
-                if box_manager is not None:
-                    box_manager.clear()
+    # --- Rendering ---------------------------------------------------------
 
     def set_entry(self, entry: EntryTreeItem):
         """Set the selected tree entry and load associated data.
@@ -1194,23 +1245,7 @@ class ImageView(QGraphicsView):
         for observation_entry in self.observation_map.values():
             observation = observation_entry.observation
             self._hydrate_observation_boxes(observation)
-            uuid = observation.uuid
-            observation.box_manager = BoundingBoxManager()
-            observation.box_manager.set_box_click_callback(
-                self.show_box_properties_dialog
-            )
-
-            def override_obs_selection(obs_entry):
-                def wrapped(_):
-                    if self._observation_select_callback is not None:
-                        self._observation_select_callback(obs_entry)
-
-                return wrapped
-
-            observation.box_manager.set_box_right_click_callback(
-                override_obs_selection(observation_entry)
-            )
-            self.enabled_observations[uuid] = True
+            self.enabled_observations[observation.uuid] = True
 
         selected_observation_uuid = None
         if self.observation_uuid and self.observation_uuid in self.observation_map:
@@ -1230,80 +1265,373 @@ class ImageView(QGraphicsView):
 
         self._ensure_video_data_loaded(moment)
 
-    def draw_drag_corners(self, box: GraphicsBoundingBox):
-        length = 10
-        tl_rect = self.scene().addRect(
-            box.x(), box.y(), length, length, pen=box.color.lighter()
-        )
-        tr_rect = self.scene().addRect(
-            box.x() + box.width - length,
-            box.y(),
-            length,
-            length,
-            pen=box.color.lighter(),
-        )
-        bl_rect = self.scene().addRect(
-            box.x(),
-            box.y() + box.height - length,
-            length,
-            length,
-            pen=box.color.lighter(),
-        )
-        br_rect = self.scene().addRect(
-            box.x() + box.width - length,
-            box.y() + box.height - length,
-            length,
-            length,
-            pen=box.color.lighter(),
-        )
+    def set_pixmap(self, pixmap: Optional[QPixmap]):
+        """Set the source pixmap, resize the scene to it, and fit the view.
 
-        self.hov_tl_rect = tl_rect.rect()
-        self.hov_tr_rect = tr_rect.rect()
-        self.hov_bl_rect = bl_rect.rect()
-        self.hov_br_rect = br_rect.rect()
-
-    def set_pixmap(self, pixmap):
-        """Set the source pixmap and clear drag anchors.
+        Reloading the *same* image (e.g. after a box edit triggers a data
+        refresh) intentionally does not reset the user's current zoom/pan --
+        only a genuinely different image does.
 
         Args:
-            pixmap: Source pixmap to display.
+            pixmap: Source pixmap to display, in full resolution.
         """
+        previous_key = (
+            self.pixmap_src.cacheKey()
+            if self.pixmap_src is not None and not self.pixmap_src.isNull()
+            else None
+        )
+        new_key = (
+            pixmap.cacheKey() if pixmap is not None and not pixmap.isNull() else None
+        )
+        same_image = (
+            previous_key is not None and new_key is not None and previous_key == new_key
+        )
+
         self.pixmap_src = pixmap
-        self._invalidate_scaled_pixmap_cache()
         self.pt_1 = None
         self.pt_2 = None
 
-    def _invalidate_scaled_pixmap_cache(self):
-        self._scaled_pixmap_key = None
-        self._scaled_pixmap = None
-
-    def _ensure_crosshair_items(self):
-        if self._crosshair_h_item is None:
-            self._crosshair_h_item = self.scene().addLine(
-                self.mouse_hline, self.mouse_line_pen
-            )
-        if self._crosshair_v_item is None:
-            self._crosshair_v_item = self.scene().addLine(
-                self.mouse_vline, self.mouse_line_pen
-            )
-
-    def _update_mouse_overlay(self):
-        """Update live crosshair overlay without rebuilding the full scene."""
-        if self.pixmap_src is None:
+        if pixmap is None or pixmap.isNull():
+            if self.pixmap_item is not None:
+                self.scene().removeItem(self.pixmap_item)
+                self.pixmap_item = None
+            self.scene().setSceneRect(0, 0, max(1, self.width()), max(1, self.height()))
+            if self._minimap is not None:
+                self._minimap.set_pixmap(None)
             return
 
-        self._ensure_crosshair_items()
-        if self._crosshair_h_item is not None:
-            self._crosshair_h_item.setLine(self.mouse_hline)
-        if self._crosshair_v_item is not None:
-            self._crosshair_v_item.setLine(self.mouse_vline)
+        if self.pixmap_item is None:
+            self.pixmap_item = self.scene().addPixmap(pixmap)
+            self.pixmap_item.setZValue(-100)
+        else:
+            self.pixmap_item.setPixmap(pixmap)
+        self.pixmap_item.setPos(0, 0)
+        self.scene().setSceneRect(0, 0, pixmap.width(), pixmap.height())
 
-        handle_type = self.resize_type or self._hover_handle_type
-        show_crosshair = bool(self._mouse_in_view and handle_type == 0)
-        if self._crosshair_h_item is not None:
-            self._crosshair_h_item.setVisible(show_crosshair)
-        if self._crosshair_v_item is not None:
-            self._crosshair_v_item.setVisible(show_crosshair)
+        if not same_image:
+            self._user_has_zoomed = False
+            self._fit_to_view()
+        if self._minimap is not None:
+            self._minimap.set_pixmap(pixmap)
+            self._minimap.reposition()
+        self._sync_minimap()
+
+    def _fit_to_view(self):
+        if self.pixmap_item is None:
+            return
+        self.fitInView(self.pixmap_item, Qt.AspectRatioMode.KeepAspectRatio)
+
+    def _fit_scale(self) -> float:
+        """Scale at which the image exactly fills the viewport (KeepAspectRatio)."""
+        if self.pixmap_item is None:
+            return 1.0
+        img_rect = self.pixmap_item.boundingRect()
+        viewport_size = self.viewport().size()
+        if img_rect.width() <= 0 or img_rect.height() <= 0:
+            return 1.0
+        return min(
+            viewport_size.width() / img_rect.width(),
+            viewport_size.height() / img_rect.height(),
+        )
+
+    def _sync_minimap(self):
+        """Refresh the minimap indicator and force-repaint viewport-corner overlays.
+
+        Qt's internal scroll optimization blits the viewport's existing pixels
+        during a pan/zoom for performance, which can leave child widgets
+        layered on top of the viewport (the minimap, status/ancillary labels)
+        showing stale pixels until something explicitly repaints them.
+        """
+        if self._minimap is not None:
+            self._minimap.update_visibility()
+            self._minimap.viewport().update()
+            self._minimap.update()
+        if self._status_label is not None:
+            self._status_label.update()
+        if self._ancillary_label is not None:
+            self._ancillary_label.update()
+
+    def preview_focus_on_sam_candidate(self):
+        """Temporarily center/zoom on the current SAM candidate for context.
+
+        Meant to be called while the mouse hovers the accept/reject buttons
+        (and again after accepting/rejecting, to snap to the next candidate
+        while still hovering); pair with `clear_focus_preview()` to restore
+        the prior view once the mouse actually leaves the buttons.
+        """
+        candidate = self._current_sam_candidate
+        if candidate is None or self.pixmap_item is None:
+            return
+        if self._focus_preview_saved is None:
+            # Only remember the true pre-preview state once, so repeated calls
+            # while still hovering (e.g. after accept/reject) don't clobber it
+            # with an already-zoomed-in state.
+            self._focus_preview_saved = (
+                QPointF(self.transform().m11(), self.transform().m22()),
+                self.horizontalScrollBar().value(),
+                self.verticalScrollBar().value(),
+                self._user_has_zoomed,
+            )
+        rect = QRectF(
+            candidate.x(), candidate.y(), candidate.width(), candidate.height()
+        )
+        self._focus_on_rect(rect, fraction=0.30)
+
+    def clear_focus_preview(self):
+        """Restore the view state saved by `preview_focus_on_sam_candidate()`."""
+        if self._focus_preview_saved is None:
+            return
+        scale_point, h_value, v_value, had_zoomed = self._focus_preview_saved
+        self._focus_preview_saved = None
+        self.resetTransform()
+        self.scale(scale_point.x(), scale_point.y())
+        self.horizontalScrollBar().setValue(h_value)
+        self.verticalScrollBar().setValue(v_value)
+        self._user_has_zoomed = had_zoomed
+        self._sync_minimap()
+
+    def _focus_on_rect(self, rect: QRectF, fraction: float):
+        if rect.width() <= 0 or rect.height() <= 0:
+            return
+        viewport_size = self.viewport().size()
+        if rect.width() >= rect.height():
+            scale = (fraction * viewport_size.width()) / rect.width()
+        else:
+            scale = (fraction * viewport_size.height()) / rect.height()
+        # Never zoom out past "image fills the view", same floor as wheelEvent.
+        min_scale = max(self.MIN_SCALE, self._fit_scale())
+        scale = max(min_scale, min(self.MAX_SCALE, scale))
+        self.resetTransform()
+        self.scale(scale, scale)
+        self.centerOn(rect.center())
+        self._user_has_zoomed = True
+        self._sync_minimap()
+
+    def _position_overlays(self):
+        margin = 10
+        viewport_size = self.viewport().size()
+        if self._ancillary_label is not None:
+            self._ancillary_label.move(
+                margin, viewport_size.height() - self._ancillary_label.height() - margin
+            )
+        if self._status_label is not None:
+            self._status_label.adjustSize()
+            self._status_label.move(
+                (viewport_size.width() - self._status_label.width()) // 2,
+                (viewport_size.height() - self._status_label.height()) // 2,
+            )
+        if self._minimap is not None:
+            self._minimap.reposition()
+
+    def _show_status_message(self):
+        if self._image_loading:
+            msg = "Loading image..."
+        elif self._image_loading_error:
+            msg = self._image_loading_error
+        else:
+            msg = "No image loaded."
+        self._status_label.setText(msg)
+        self._position_overlays()
+        self._status_label.show()
+        self._ancillary_label.hide()
+        self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+        self._current_cursor_shape = Qt.CursorShape.ArrowCursor
+
+    def _hide_status_message(self):
+        self._status_label.hide()
+
+    def draw_ancillary_data(self):
+        """Update the ancillary metadata overlay text for the current image."""
+        if self.moment is None:
+            self._ancillary_label.hide()
+            return
+
+        moment = self.moment.imaged_moment
+        text_dict = {}
+
+        if moment.ancillary_data:
+            ancillary_data = moment.ancillary_data
+
+            if "depth_meters" in ancillary_data:
+                text_dict["Depth (m): {:<10.2f}"] = ancillary_data["depth_meters"]
+
+            if "latitude" in ancillary_data:
+                text_dict["Latitude: {:<10.3f}"] = ancillary_data["latitude"]
+
+            if "longitude" in ancillary_data:
+                text_dict["Longitude: {:<10.3f}"] = ancillary_data["longitude"]
+
+        if moment.recorded_timestamp:
+            text_dict["Recorded: {:<20}"] = moment.recorded_timestamp.replace(
+                "T", " "
+            ).replace("Z", "")
+
+        if moment.video_data and "uri" in moment.video_data:
+            uri = moment.video_data["uri"]
+            if uri.startswith("urn:"):
+                video_sequence_name = uri.split(":")[-1]
+                text_dict["Video: {:<10}"] = video_sequence_name
+
+        text_str = " ".join(k.format(v) for k, v in text_dict.items())
+        if not text_str:
+            self._ancillary_label.hide()
+            return
+        self._ancillary_label.setText(text_str)
+        self._ancillary_label.adjustSize()
+        self._position_overlays()
+        self._ancillary_label.show()
+
+    @staticmethod
+    def _cosmetic_pen(color: str, width: int, style=Qt.PenStyle.SolidLine) -> QPen:
+        pen = QPen(QColor(PALETTE[color]), width, style)
+        pen.setCosmetic(True)
+        return pen
+
+    def _ensure_overlay_items(self):
+        if self._drag_rect_item is None:
+            self._drag_rect_item = self.scene().addRect(
+                QRectF(), self._cosmetic_pen("accent_alt", 1)
+            )
+            self._drag_rect_item.setZValue(150)
+            self._drag_rect_item.setVisible(False)
+        if self._sam_candidate_item is None:
+            self._sam_candidate_item = self.scene().addRect(
+                QRectF(), self._cosmetic_pen("success", 2, Qt.PenStyle.DashLine)
+            )
+            self._sam_candidate_item.setZValue(200)
+            self._sam_candidate_item.setVisible(False)
+        if self._sam_hover_item is None:
+            self._sam_hover_item = self.scene().addRect(
+                QRectF(), self._cosmetic_pen("warning", 2, Qt.PenStyle.DashLine)
+            )
+            self._sam_hover_item.setZValue(200)
+            self._sam_hover_item.setVisible(False)
+        if self._crosshair_h_item is None:
+            self._crosshair_h_item = self.scene().addLine(
+                QLineF(), self._cosmetic_pen("crosshairs", 1)
+            )
+            self._crosshair_h_item.setZValue(250)
+            self._crosshair_h_item.setVisible(False)
+        if self._crosshair_v_item is None:
+            self._crosshair_v_item = self.scene().addLine(
+                QLineF(), self._cosmetic_pen("crosshairs", 1)
+            )
+            self._crosshair_v_item.setZValue(250)
+            self._crosshair_v_item.setVisible(False)
+
+    def _update_crosshair(self, scene_pos: Optional[QPointF]):
+        """Show red crosshairs through the cursor while Ctrl (draw-box mode) is held."""
+        if not self._has_scene() or self.pixmap_src is None:
+            return
+        self._ensure_overlay_items()
+        if scene_pos is None:
+            self._crosshair_h_item.setVisible(False)
+            self._crosshair_v_item.setVisible(False)
+            return
+        scene_rect = self.scene().sceneRect()
+        self._crosshair_h_item.setLine(
+            QLineF(scene_rect.left(), scene_pos.y(), scene_rect.right(), scene_pos.y())
+        )
+        self._crosshair_v_item.setLine(
+            QLineF(scene_pos.x(), scene_rect.top(), scene_pos.x(), scene_rect.bottom())
+        )
+        self._crosshair_h_item.setVisible(True)
+        self._crosshair_v_item.setVisible(True)
+
+    def _update_drag_rect_overlay(self):
+        if not self._has_scene():
+            return
+        self._ensure_overlay_items()
+        rect = self.calc_drag_rect()
+        if rect is None:
+            self._drag_rect_item.setVisible(False)
+            return
+        self._drag_rect_item.setRect(rect)
+        self._drag_rect_item.setVisible(True)
+
+    def _clear_drag_rect_overlay(self):
+        if self._drag_rect_item is not None:
+            self._drag_rect_item.setVisible(False)
+
+    def _update_mouse_overlay(self):
+        """Reposition SAM candidate/hover overlay rects without a full rebuild."""
+        if self.pixmap_src is None or self.pixmap_item is None:
+            return
+        self._ensure_overlay_items()
+
+        candidate = self._current_sam_candidate
+        if candidate is not None:
+            self._sam_candidate_item.setRect(
+                QRectF(
+                    candidate.x(), candidate.y(), candidate.width(), candidate.height()
+                )
+            )
+            self._sam_candidate_item.setVisible(True)
+        else:
+            self._sam_candidate_item.setVisible(False)
+
+        if self._mouse_in_view and self._sam_hover_box is not None:
+            box = self._sam_hover_box
+            self._sam_hover_item.setRect(
+                QRectF(box.x(), box.y(), box.width(), box.height())
+            )
+            self._sam_hover_item.setVisible(True)
+        else:
+            self._sam_hover_item.setVisible(False)
+
+    def _clear_box_items(self):
+        for item in self._box_items:
+            if item.scene() is not None:
+                self.scene().removeItem(item)
+        self._box_items = []
+
+    def _add_box_item(
+        self, box: SourceBoundingBox, bounds: QRectF, editable: bool
+    ) -> BoundingBoxItem:
+        box_item = BoundingBoxItem(box, editable=editable)
+        box_item.set_image_bounds(bounds)
+        box_item.set_highlighted(self._box_is_highlighted(box))
+        if editable:
+            box_item.geometryCommitted.connect(self._on_box_geometry_committed)
+            box_item.contextMenuRequested.connect(self._on_box_context_menu_requested)
+            box_item.resizeStarted.connect(self._on_box_resize_started)
+            box_item.resizeFinished.connect(self._on_box_resize_finished)
+        self.scene().addItem(box_item)
+        self._box_items.append(box_item)
+        return box_item
+
+    def _rebuild_box_items(self):
+        self._clear_box_items()
+        if (
+            not self.enabled_observations
+            or not self.observation_map
+            or self.pixmap_src is None
+        ):
+            return
+        bounds = QRectF(0, 0, self.pixmap_src.width(), self.pixmap_src.height())
+        for uuid, enabled in self.enabled_observations.items():
+            if not enabled:
+                continue
+            observation = self.observation_map[uuid].observation
+            for box in observation.boxes:
+                self._add_box_item(box, bounds, editable=True)
+            for video_box in observation.video_boxes:
+                self._add_box_item(video_box, bounds, editable=False)
+
+    def redraw(self):
+        """Sync scene items and overlays with the current state."""
+        if self.pixmap_src is None or self.pixmap_item is None:
+            self._clear_box_items()
+            self._show_status_message()
+            self._update_mouse_overlay()
+            return
+
+        self._hide_status_message()
+        self.draw_ancillary_data()
+        self._rebuild_box_items()
+        self._update_mouse_overlay()
+        self._update_drag_rect_overlay()
+        self._sync_minimap()
 
     def select_observation(self, observation_uuid: str):
         """Set the active observation used for highlight/edit focus.
@@ -1317,6 +1645,8 @@ class ImageView(QGraphicsView):
         else:
             self.observation_uuid = None
             self.selected_box = None
+        self._clear_scene_selection()
+        self._refresh_highlighting()
         if self.observation_uuid is None:
             self._sam_candidate_boxes = []
             self._sam_hover_box = None
@@ -1341,154 +1671,63 @@ class ImageView(QGraphicsView):
         for box in all_boxes:
             if box.association_uuid == association_uuid:
                 self.selected_box = box
-                self.hovered_box = None
+                box_item = self._find_box_item(box)
+                if box_item is not None:
+                    self._suppress_selection_signal = True
+                    try:
+                        self._clear_scene_selection()
+                        box_item.setSelected(True)
+                    finally:
+                        self._suppress_selection_signal = False
+                self._refresh_highlighting()
                 self.redraw()
                 return
 
         raise LookupError("Could not find the selected association box.")
 
-    def refit(self):
-        """Refit the scene rectangle to match the current view size."""
-        self.setSceneRect(0, 0, self.width(), self.height())
-
-    def draw_pixmap(self, pixmap: QPixmap):
-        """Scale and draw a pixmap into the scene.
+    def get_im_rel_point(self, pt) -> QPointF:
+        """Convert a viewport-relative point to full-resolution image coordinates.
 
         Args:
-            pixmap: Pixmap object to draw.
+            pt: Viewport-relative point (QPoint or QPointF).
 
         Returns:
-            QGraphicsPixmapItem | None: Created scene item, if drawn.
+            QPointF: Point in image-pixel space.
         """
-        if not pixmap or pixmap.isNull():
-            return
+        point = pt.toPoint() if hasattr(pt, "toPoint") else pt
+        return self.mapToScene(point)
 
-        cache_key = (int(pixmap.cacheKey()), int(self.width()), int(self.height()))
-        if self._scaled_pixmap_key == cache_key and self._scaled_pixmap is not None:
-            scaled_pixmap = self._scaled_pixmap
-        else:
-            scaled_pixmap = pixmap.scaled(
-                self.width(),
-                self.height(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-            )
-            self._scaled_pixmap_key = cache_key
-            self._scaled_pixmap = scaled_pixmap
-
-        self.pixmap_scalar = scaled_pixmap.width() / pixmap.width()
-        self.pixmap_pos = QPointF(
-            self.width() / 2 - scaled_pixmap.width() / 2,
-            self.height() / 2 - scaled_pixmap.height() / 2,
-        )
-
-        pixmap_item = self.scene().addPixmap(scaled_pixmap)
-        pixmap_item.setPos(self.pixmap_pos)
-        return pixmap_item
-
-    def draw_ancillary_data(self):
-        """Draw ancillary metadata text over the current image."""
-        text_dict = {}
-
-        moment = self.moment.imaged_moment
-
-        if moment.ancillary_data:
-            ancillary_data = moment.ancillary_data
-
-            if "depth_meters" in ancillary_data:
-                text_dict["Depth (m): {:<10.2f}"] = ancillary_data["depth_meters"]
-
-            if "latitude" in ancillary_data:
-                text_dict["Latitude: {:<10.3f}"] = ancillary_data["latitude"]
-
-            if "longitude" in ancillary_data:
-                text_dict["Longitude: {:<10.3f}"] = ancillary_data["longitude"]
-
-        if moment.recorded_timestamp:
-            text_dict["Recorded: {:<20}"] = moment.recorded_timestamp.replace(
-                "T", " "
-            ).replace("Z", "")
-
-        if moment.video_data and "uri" in moment.video_data:
-            uri = moment.video_data["uri"]
-            if uri.startswith("urn:"):
-                video_sequence_name = moment.video_data["uri"].split(":")[-1]
-                text_dict["Video: {:<10}"] = video_sequence_name
-
-        text_str = " ".join(k.format(v) for k, v in text_dict.items())
-        text_item = self.scene().addText(text_str, QFont("Courier New"))
-        text_item.setDefaultTextColor(QColor(PALETTE["fg_primary"]))
-        text_item.setPos(10, self.height() - text_item.boundingRect().height() - 10)
-
-    def draw_bounding_box(
-        self,
-        box_src: SourceBoundingBox,
-        manager: BoundingBoxManager,
-        editable: bool = True,
-    ):
-        """Draw a bounding box and register it in a manager.
-
-        Args:
-            box_src: Source bounding box to add.
-            manager: Bounding box manager.
-            editable: Whether the box should be editable.
-
-        Returns:
-            GraphicsBoundingBox: Drawn graphics item.
-        """
-        box_pos = self.get_scene_rel_point(QPointF(box_src.x(), box_src.y()))
-        box_item = manager.make_box(
-            box_pos.x(),
-            box_pos.y(),
-            self.pixmap_scalar * box_src.width(),
-            self.pixmap_scalar * box_src.height(),
-            box_src.label,
-            box_src,
-            editable=editable,
-        )
-        self.scene().addItem(box_item)
-        return box_item
-
-    def get_im_rel_point(self, pt: QPoint):
-        """Convert a scene-relative point to image coordinates.
-
-        Args:
-            pt: Scene-relative point.
-
-        Returns:
-            QPointF: Point relative to the image.
-        """
-        return QPointF(
-            (pt.x() - self.pixmap_pos.x()) / self.pixmap_scalar,
-            (pt.y() - self.pixmap_pos.y()) / self.pixmap_scalar,
-        )
-
-    def get_scene_rel_point(self, pt: QPointF):
-        """Convert an image-relative point to scene coordinates.
+    def get_scene_rel_point(self, pt: QPointF) -> QPoint:
+        """Convert an image-relative point to viewport coordinates.
 
         Args:
             pt: Image-relative point.
 
         Returns:
-            QPoint: Point relative to the scene.
+            QPoint: Point relative to the viewport.
         """
-        return QPoint(
-            int(self.pixmap_scalar * pt.x() + self.pixmap_pos.x()),
-            int(self.pixmap_scalar * pt.y() + self.pixmap_pos.y()),
-        )
+        return self.mapFromScene(pt)
 
-    def show_box_properties_dialog(self, box: GraphicsBoundingBox):
+    def show_box_properties_dialog(self, box_item: BoundingBoxItem):
         """Open the properties dialog for a selected box.
 
         Args:
-            box: Graphical bounding box object to edit.
+            box_item: Graphical bounding box item to edit.
         """
-        self.selected_box = box.source
-        self.redraw()
+        box = box_item.source
+        self.selected_box = box
+        self._suppress_selection_signal = True
+        try:
+            self._clear_scene_selection()
+            box_item.setSelected(True)
+        finally:
+            self._suppress_selection_signal = False
+        self._refresh_highlighting()
 
-        box_json_before = box.source.get_json()
-        part_before = box.source.part or "self"
+        box_json_before = box.get_json()
+        part_before = box.part or "self"
 
-        dialog = PropertiesDialog(box.source, parent=self)
+        dialog = PropertiesDialog(box, parent=self)
         dialog.setup_form(
             self.pixmap_src,
             self.redraw,
@@ -1501,15 +1740,15 @@ class ImageView(QGraphicsView):
         center_window(dialog, self.window())
         dialog.exec()
 
-        box_json_after = box.source.get_json()
-        part_after = box.source.part or "self"
+        box_json_after = box.get_json()
+        part_after = box.part or "self"
         if box_json_after != box_json_before or part_after != part_before:
-            box.source.observer = self.observer  # Update observer field
+            box.observer = self.observer  # Update observer field
             try:
                 self._m3_modify_box(
                     box_json_after,
-                    box.source.observation_uuid,
-                    box.source.association_uuid,
+                    box.observation_uuid,
+                    box.association_uuid,
                     to_concept=part_after,
                 )
             except ServiceError as exc:
@@ -1525,7 +1764,67 @@ class ImageView(QGraphicsView):
         self.pt_2 = None
 
         self.selected_box = None
+        self._clear_scene_selection()
         self.redraw()
+
+    def _on_box_geometry_committed(self, box_item: BoundingBoxItem):
+        box = box_item.source
+        try:
+            self._m3_modify_box(
+                box.get_json(),
+                box.observation_uuid,
+                box.association_uuid,
+                to_concept=box.part or "self",
+            )
+        except ServiceError as exc:
+            QMessageBox.warning(
+                self,
+                "Update failed",
+                "Could not persist box change.\n\n{}".format(exc),
+            )
+        else:
+            self.reload_moment()
+
+    def _on_box_resize_started(self):
+        self.resize_type = True
+
+    def _on_box_resize_finished(self):
+        self.resize_type = False
+
+    def _on_box_context_menu_requested(
+        self, box_item: BoundingBoxItem, scene_pos: QPointF
+    ):
+        menu = QMenu(self)
+        edit_action = menu.addAction("Edit Properties...")
+        select_action = menu.addAction("Select Observation")
+        menu.addSeparator()
+        delete_action = menu.addAction("Delete Box")
+
+        global_pos = self.mapToGlobal(self.mapFromScene(scene_pos))
+        chosen = menu.exec(global_pos)
+        if chosen is edit_action:
+            self.show_box_properties_dialog(box_item)
+        elif chosen is select_action:
+            entry = (
+                self.observation_map.get(box_item.source.observation_uuid)
+                if self.observation_map
+                else None
+            )
+            if entry is not None and self._observation_select_callback is not None:
+                self._observation_select_callback(entry)
+        elif chosen is delete_action:
+            choice = QMessageBox.question(
+                self,
+                "Delete Box?",
+                "Delete this bounding box?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if choice == QMessageBox.StandardButton.Yes:
+                try:
+                    self.delete_box(box_item.source)
+                except Exception as exc:
+                    QMessageBox.warning(self, "Delete failed", str(exc))
 
     def delete_box(self, box: SourceBoundingBox):
         """Delete a box from the observation and persist deletion.
@@ -1835,87 +2134,54 @@ class ImageView(QGraphicsView):
         if refresh:
             self.reload_moment(preserve_sam_state=preserve_sam_state)
 
-    def reset_mouse(self):
-        self.pt_1 = None
-        self.pt_2 = None
-        self.hov_pt_1 = None
-        self.resize_offset = None
-        self.resize_type = None
-        self._hover_handle_type = 0
-        self._sam_hover_box = None
-        self.redraw()
+    # --- Mouse / keyboard / view events -------------------------------------
 
-    def _drag_handle_hover_type(self, scene_pos: QPointF) -> int:
-        if self.hovered_box is None or self.pixmap_scalar is None:
-            return 0
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        if self.pixmap_src is None or self.pixmap_item is None:
+            super().wheelEvent(event)
+            return
+        delta = event.angleDelta().y()
+        if delta == 0:
+            super().wheelEvent(event)
+            return
+        factor = self.ZOOM_STEP if delta > 0 else 1.0 / self.ZOOM_STEP
+        current_scale = self.transform().m11()
+        # Never allow zooming out past "image fills the view".
+        min_scale = max(self.MIN_SCALE, self._fit_scale())
+        target_scale = max(min_scale, min(self.MAX_SCALE, current_scale * factor))
+        applied_factor = target_scale / current_scale if current_scale else 1.0
+        if abs(applied_factor - 1.0) > 1e-6:
+            # Anchor manually on the wheel event's own position so the point
+            # under the cursor stays fixed, instead of relying on Qt's
+            # AnchorUnderMouse (which re-queries the OS cursor position and
+            # can end up zooming around the wrong spot).
+            anchor_viewport_pos = event.position().toPoint()
+            anchor_scene_pos = self.mapToScene(anchor_viewport_pos)
+            self.scale(applied_factor, applied_factor)
+            shifted_viewport_pos = self.mapFromScene(anchor_scene_pos)
+            drift = shifted_viewport_pos - anchor_viewport_pos
+            self.horizontalScrollBar().setValue(
+                self.horizontalScrollBar().value() + drift.x()
+            )
+            self.verticalScrollBar().setValue(
+                self.verticalScrollBar().value() + drift.y()
+            )
+        self._user_has_zoomed = target_scale > min_scale * 1.001
+        self._sync_minimap()
+        event.accept()
 
-        length = 10.0
-        top_left = self.get_scene_rel_point(
-            QPointF(self.hovered_box.x(), self.hovered_box.y())
-        )
-        x = float(top_left.x())
-        y = float(top_left.y())
-        w = float(self.hovered_box.width()) * float(self.pixmap_scalar)
-        h = float(self.hovered_box.height()) * float(self.pixmap_scalar)
+    def _resolve_box_item(self, item) -> Optional[BoundingBoxItem]:
+        if isinstance(item, BoundingBoxItem):
+            return item
+        if item is not None and isinstance(item.parentItem(), BoundingBoxItem):
+            return item.parentItem()
+        return None
 
-        if QRectF(x, y, length, length).contains(scene_pos):
-            return 1
-        if QRectF(x + w - length, y, length, length).contains(scene_pos):
-            return 2
-        if QRectF(x, y + h - length, length, length).contains(scene_pos):
-            return 3
-        if QRectF(x + w - length, y + h - length, length, length).contains(scene_pos):
-            return 4
-        return 0
-
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if self.pixmap_src:
-            new_rect = self.calc_drag_rect()
-            if new_rect:
-                new_rect = self.calc_crop_rect(new_rect)
-                box_json = {
-                    "x": int(new_rect.x()),
-                    "y": int(new_rect.y()),
-                    "width": int(new_rect.width()),
-                    "height": int(new_rect.height()),
-                    "image_reference_uuid": self.moment.imaged_moment.image_reference_uuid,
-                }
-
-                concept = (
-                    self.observation_map[self.observation_uuid].observation.concept
-                    if self.observation_uuid
-                    else ""
-                )
-                observer = self.observer
-
-                # Default fast-path: create boxes as "self" and allow editing in properties.
-                new_src_box = SourceBoundingBox(
-                    box_json, concept, observer, part="self"
-                )
-                if new_src_box.width() * new_src_box.height() > 100:
-                    try:
-                        self.handle_new_box(new_src_box)
-                    except Exception as exc:
-                        QMessageBox.warning(self, "Box creation failed", str(exc))
-
-            if self.resize_type:
-                try:
-                    self._m3_modify_box(
-                        self.hovered_box.get_json(),
-                        self.hovered_box.observation_uuid,
-                        self.hovered_box.association_uuid,
-                        to_concept=self.hovered_box.part or "self",
-                    )
-                except ServiceError as exc:
-                    QMessageBox.warning(
-                        self,
-                        "Resize failed",
-                        "Could not persist box resize.\n\n{}".format(exc),
-                    )
-                else:
-                    self.reload_moment()
-
-            self.reset_mouse()
+    def _is_resize_handle_at(self, viewport_pos: QPoint) -> bool:
+        box_item = self._resolve_box_item(self.itemAt(viewport_pos))
+        if box_item is None:
+            return False
+        return box_item.edge_at_scene_point(self.mapToScene(viewport_pos)) is not None
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if (
@@ -1935,148 +2201,191 @@ class ImageView(QGraphicsView):
             event.accept()
             return
 
-        pos_f = QPointF(event.pos())
-        if self.pixmap_src:
-            self.pt_1 = self.get_im_rel_point(pos_f)
-        if self.hovered_box:
-            corner_box = None
-            self.hov_pt_1 = self.get_im_rel_point(pos_f)
-            if self.hov_tl_rect is not None and self.hov_tl_rect.contains(pos_f):
-                self.resize_type = 1
-                corner_box = self.hov_tl_rect
-            elif self.hov_tr_rect is not None and self.hov_tr_rect.contains(pos_f):
-                self.resize_type = 2
-                corner_box = self.hov_tr_rect
-            elif self.hov_bl_rect is not None and self.hov_bl_rect.contains(pos_f):
-                self.resize_type = 3
-                corner_box = self.hov_bl_rect
-            elif self.hov_br_rect is not None and self.hov_br_rect.contains(pos_f):
-                self.resize_type = 4
-                corner_box = self.hov_br_rect
-            else:
-                self.hov_pt_1 = None
+        ctrl_held = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+        if (
+            ctrl_held
+            and event.button() == Qt.MouseButton.LeftButton
+            and self.pixmap_src
+        ):
+            # Ctrl always starts drawing a new box, regardless of what's under
+            # the cursor -- do NOT forward to the scene, so an existing box's
+            # own move/resize handling never engages while Ctrl is held.
+            self.pt_1 = self.get_im_rel_point(event.pos())
+            self.pt_2 = None
+            event.accept()
+            return
 
-            if corner_box:
-                self.pt_1 = None
-                x, y, _, _ = corner_box.getRect()
-                corner = self.get_im_rel_point(QPoint(int(x), int(y)))
-                self.resize_offset = self.hov_pt_1 - corner
+        if (
+            not self._is_resize_handle_at(event.pos())
+            and event.button() == Qt.MouseButton.LeftButton
+            and self.pixmap_src
+        ):
+            # Plain click+drag pans the view -- over empty canvas, a SAM
+            # suggestion overlay, or the body of an existing box (only its
+            # edge/corner handles resize; dragging a box body no longer
+            # moves it, so panning stays available even over nested boxes).
+            self._panning = True
+            self._pan_start_pos = event.pos()
+            self._pan_start_scroll = (
+                self.horizontalScrollBar().value(),
+                self.verticalScrollBar().value(),
+            )
+            self.viewport().setCursor(Qt.CursorShape.ClosedHandCursor)
+            self._current_cursor_shape = Qt.CursorShape.ClosedHandCursor
+
+        super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         self._mouse_in_view = True
-        previous_hovered_box = self.hovered_box
-        previous_hover_handle_type = self._hover_handle_type
+        ctrl_held = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
 
-        if self.pixmap_src:
-            self.pt_2 = self.get_im_rel_point(event.pos())
-            if self.hovered_box:
-                if self.resize_type == 1:
-                    new_tl_corner = (self.pt_2 - self.resize_offset).toPoint()
-                    if new_tl_corner.x() < 0:
-                        new_tl_corner.setX(0)
-                    if new_tl_corner.y() < 0:
-                        new_tl_corner.setY(0)
-                    self.hovered_box.setTopLeft(new_tl_corner)
-                elif self.resize_type == 2:
-                    new_tr_corner = (self.pt_2 - self.resize_offset).toPoint()
-                    new_tr_corner.setX(
-                        int(new_tr_corner.x() + 2 * self.resize_offset.x())
-                    )
-                    if new_tr_corner.x() > self.pixmap_src.width():
-                        new_tr_corner.setX(int(self.pixmap_src.width()))
-                    if new_tr_corner.y() < 0:
-                        new_tr_corner.setY(0)
-                    self.hovered_box.setTopRight(new_tr_corner)
-                elif self.resize_type == 3:
-                    new_bl_corner = (self.pt_2 - self.resize_offset).toPoint()
-                    new_bl_corner.setY(
-                        int(new_bl_corner.y() + 2 * self.resize_offset.y())
-                    )
-                    if new_bl_corner.x() < 0:
-                        new_bl_corner.setX(0)
-                    if new_bl_corner.y() > self.pixmap_src.height():
-                        new_bl_corner.setY(int(self.pixmap_src.height()))
-                    self.hovered_box.setBottomLeft(new_bl_corner)
-                elif self.resize_type == 4:
-                    new_br_corner = (self.pt_2 - self.resize_offset).toPoint()
-                    new_br_corner.setX(
-                        int(new_br_corner.x() + 2 * self.resize_offset.x())
-                    )
-                    new_br_corner.setY(
-                        int(new_br_corner.y() + 2 * self.resize_offset.y())
-                    )
-                    if new_br_corner.x() > self.pixmap_src.width():
-                        new_br_corner.setX(int(self.pixmap_src.width()))
-                    if new_br_corner.y() > self.pixmap_src.height():
-                        new_br_corner.setY(int(self.pixmap_src.height()))
-                    self.hovered_box.setBottomRight(new_br_corner)
+        if ctrl_held and self.pixmap_src:
+            self._update_crosshair(self.get_im_rel_point(event.pos()))
+            if self._current_cursor_shape != Qt.CursorShape.BlankCursor:
+                self.viewport().setCursor(Qt.CursorShape.BlankCursor)
+                self._current_cursor_shape = Qt.CursorShape.BlankCursor
+            if self._sam_hover_box is not None:
+                # Ctrl is reserved for drawing; hide any SAM suggestion while held.
+                self._sam_hover_box = None
+                self._update_mouse_overlay()
+            if self.pt_1 is not None and (event.buttons() & Qt.MouseButton.LeftButton):
+                self.pt_2 = self.get_im_rel_point(event.pos())
+                self._update_drag_rect_overlay()
+            # Do not forward to the scene -- box hover/resize/move must not
+            # engage while Ctrl (draw-new-box mode) is held.
+            return
 
-        self.mouse_hline.setLine(
-            0, event.pos().y(), self.scene().width(), event.pos().y()
-        )
-        self.mouse_vline.setLine(
-            event.pos().x(), 0, event.pos().x(), self.scene().height()
-        )
+        self._update_crosshair(None)
 
-        if self.enabled_observations and not self.resize_type:
-            hovered_item = None
-            for uuid, enabled in self.enabled_observations.items():
-                if enabled:
-                    hov_box_item = self.observation_map[
-                        uuid
-                    ].observation.box_manager.get_box_hovered(event.pos())
-                    if hov_box_item and (
-                        hovered_item is None
-                        or hov_box_item.area() < hovered_item.area()
-                    ):
-                        hovered_item = hov_box_item
-            self.hovered_box = hovered_item.source if hovered_item else None
+        if self._panning and self._pan_start_pos is not None:
+            delta = event.pos() - self._pan_start_pos
+            self.horizontalScrollBar().setValue(self._pan_start_scroll[0] - delta.x())
+            self.verticalScrollBar().setValue(self._pan_start_scroll[1] - delta.y())
+            super().mouseMoveEvent(event)
+            self._sync_minimap()
+            return
 
-        self._hover_handle_type = self._drag_handle_hover_type(QPointF(event.pos()))
+        if self.pixmap_src is not None and not self._is_resize_handle_at(event.pos()):
+            desired_cursor = Qt.CursorShape.OpenHandCursor
+            if self._current_cursor_shape != desired_cursor:
+                self.viewport().setCursor(desired_cursor)
+                self._current_cursor_shape = desired_cursor
 
         self._maybe_update_hover_candidate(event)
 
-        is_dragging = bool(
-            self.resize_type
-            or (event.buttons() & Qt.MouseButton.LeftButton and self.pt_1 is not None)
-        )
-        hover_changed = previous_hovered_box != self.hovered_box
-        handle_changed = previous_hover_handle_type != self._hover_handle_type
+        if (
+            self.pixmap_src
+            and self.pt_1 is not None
+            and (event.buttons() & Qt.MouseButton.LeftButton)
+        ):
+            self.pt_2 = self.get_im_rel_point(event.pos())
+            self._update_drag_rect_overlay()
 
-        if is_dragging or hover_changed or handle_changed:
-            self.redraw()
-        else:
-            self._update_mouse_overlay()
+        super().mouseMoveEvent(event)
+        self._update_mouse_overlay()
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if self._panning:
+            self._panning = False
+            self._pan_start_pos = None
+            self._pan_start_scroll = None
+            self.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
+            self._current_cursor_shape = Qt.CursorShape.OpenHandCursor
+            super().mouseReleaseEvent(event)
+            return
+
+        if self.pixmap_src and self.pt_1 is not None and self.pt_2 is not None:
+            new_rect = self.calc_crop_rect(self.calc_drag_rect())
+            box_json = {
+                "x": int(new_rect.x()),
+                "y": int(new_rect.y()),
+                "width": int(new_rect.width()),
+                "height": int(new_rect.height()),
+                "image_reference_uuid": self.moment.imaged_moment.image_reference_uuid,
+            }
+
+            concept = (
+                self.observation_map[self.observation_uuid].observation.concept
+                if self.observation_uuid
+                else ""
+            )
+            observer = self.observer
+
+            new_src_box = SourceBoundingBox(box_json, concept, observer, part="self")
+            if new_src_box.width() * new_src_box.height() > 100:
+                try:
+                    self.handle_new_box(new_src_box)
+                except Exception as exc:
+                    QMessageBox.warning(self, "Box creation failed", str(exc))
+
+        self.pt_1 = None
+        self.pt_2 = None
+        self._clear_drag_rect_overlay()
+        super().mouseReleaseEvent(event)
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
+        self.pt_1 = None
+        self.pt_2 = None
+        item = self.itemAt(event.pos())
+        box_item = item if isinstance(item, BoundingBoxItem) else None
+        if box_item is None and item is not None:
+            parent = item.parentItem()
+            if isinstance(parent, BoundingBoxItem):
+                box_item = parent
+        if box_item is not None and box_item.editable:
+            self.show_box_properties_dialog(box_item)
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
 
     def enterEvent(self, event: QEnterEvent) -> None:
         self._mouse_in_view = True
-        self.redraw()
+        if self.pixmap_src is not None and not self._panning:
+            self.viewport().setCursor(Qt.CursorShape.OpenHandCursor)
+            self._current_cursor_shape = Qt.CursorShape.OpenHandCursor
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:
         self._mouse_in_view = False
-        self._hover_handle_type = 0
         self._sam_hover_box = None
         self._sam_last_hover_point = None
-        self.redraw()
+        self.viewport().setCursor(Qt.CursorShape.ArrowCursor)
+        self._current_cursor_shape = Qt.CursorShape.ArrowCursor
+        self._update_crosshair(None)
+        self._update_mouse_overlay()
         super().leaveEvent(event)
 
-    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
-        if self.pixmap_src:
-            self.pt_1 = None
-            self.pt_2 = None
-            for uuid, enabled in self.enabled_observations.items():
-                if enabled:
-                    self.observation_map[uuid].observation.box_manager.check_box_click(
-                        event.pos(), event.button() == Qt.MouseButton.RightButton
-                    )
+    def scrollContentsBy(self, dx: int, dy: int) -> None:
+        super().scrollContentsBy(dx, dy)
+        self._sync_minimap()
 
     def resizeEvent(self, event: QResizeEvent) -> None:
-        self._invalidate_scaled_pixmap_cache()
-        self.redraw()
+        super().resizeEvent(event)
+        if not self._user_has_zoomed:
+            self._fit_to_view()
+        self._position_overlays()
+        self._sync_minimap()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Up:
             self.select_prev()
         elif event.key() == Qt.Key.Key_Down:
             self.select_next()
+        elif event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            if self.selected_box is not None:
+                choice = QMessageBox.question(
+                    self,
+                    "Delete Box?",
+                    "Delete the selected bounding box?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if choice == QMessageBox.StandardButton.Yes:
+                    try:
+                        self.delete_box(self.selected_box)
+                    except Exception as exc:
+                        QMessageBox.warning(self, "Delete failed", str(exc))
+            else:
+                super().keyPressEvent(event)
+        else:
+            super().keyPressEvent(event)

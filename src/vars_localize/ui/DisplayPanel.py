@@ -2,11 +2,27 @@
 Container widget used do display images + localizations and process input.
 """
 
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton
 
 from vars_localize.ui.ImageView import ImageView
 from vars_localize.ui.EntryTree import EntryTreeItem
+
+
+class _HoverButton(QPushButton):
+    """QPushButton that also emits signals on mouse enter/leave."""
+
+    hoverEntered = pyqtSignal()
+    hoverLeft = pyqtSignal()
+
+    def enterEvent(self, event):
+        self.hoverEntered.emit()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.hoverLeft.emit()
+        super().leaveEvent(event)
 
 
 class DisplayPanel(QWidget):
@@ -27,13 +43,17 @@ class DisplayPanel(QWidget):
         self.sam_status_label.setObjectName("secondaryText")
         self.sam_status_label.setWordWrap(True)
 
-        self.sam_accept = QPushButton("✓")
+        self.sam_accept = _HoverButton("✓")
         self.sam_accept.setToolTip("Accept current SAM candidate")
         self.sam_accept.clicked.connect(self._accept_sam_candidate)
+        self.sam_accept.hoverEntered.connect(self._preview_sam_candidate)
+        self.sam_accept.hoverLeft.connect(self._clear_sam_candidate_preview)
 
-        self.sam_reject = QPushButton("x")
+        self.sam_reject = _HoverButton("x")
         self.sam_reject.setToolTip("Reject current SAM candidate")
         self.sam_reject.clicked.connect(self._reject_sam_candidate)
+        self.sam_reject.hoverEntered.connect(self._preview_sam_candidate)
+        self.sam_reject.hoverLeft.connect(self._clear_sam_candidate_preview)
 
         self.sam_find_similar = QPushButton("Find Similar")
         self.sam_find_similar.setToolTip(
@@ -76,9 +96,19 @@ class DisplayPanel(QWidget):
 
     def _accept_sam_candidate(self):
         self.image_view.accept_sam_candidate()
+        # The mouse typically doesn't leave the button on click, so re-snap
+        # the preview to whatever candidate is now current.
+        self.image_view.preview_focus_on_sam_candidate()
 
     def _reject_sam_candidate(self):
         self.image_view.reject_sam_candidate()
+        self.image_view.preview_focus_on_sam_candidate()
+
+    def _preview_sam_candidate(self):
+        self.image_view.preview_focus_on_sam_candidate()
+
+    def _clear_sam_candidate_preview(self):
+        self.image_view.clear_focus_preview()
 
     def _find_similar(self):
         self.image_view.find_similar_from_exemplars()

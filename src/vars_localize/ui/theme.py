@@ -16,6 +16,7 @@ PALETTE = {
     "danger": "#e95f5f",
     "success": "#58c58a",
     "crosshairs": "#ff0000",
+    "selection_ring": "#ffffff",
 }
 
 STATUS_COLORS = {

@@ -29,6 +29,8 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QMenu,
     QLabel,
+    QApplication,
+    QWidget,
 )
 
 from vars_localize.ui.ConceptSearchbar import ConceptSearchbar
@@ -39,7 +41,7 @@ from vars_localize.ui.PropertiesDialog import PropertiesDialog
 from vars_localize.ui.theme import PALETTE
 from vars_localize.services import M3Service
 from vars_localize.services.errors import ServiceError
-from vars_localize.util.logging import get_logger
+from vars_localize.util.logging import get_logger, debug_input_enabled
 from vars_localize.util.qt_async import run_async
 from vars_localize.util.utils import center_window
 
@@ -265,9 +267,67 @@ class ImageView(QGraphicsView):
         self._video_data_request_uuid = None
         self._active_annotation_concept: Optional[str] = None
 
+        if debug_input_enabled():
+            # Periodic proof-of-life: if this keeps ticking while the canvas
+            # appears frozen, the Qt event loop itself is fine and the issue
+            # is specifically stuck mouse-input delivery to this widget, not
+            # a hang/deadlock. If it stops ticking too, the whole event loop
+            # is blocked -- a very different (and much easier) bug to chase.
+            self._debug_heartbeat_timer = QTimer(self)
+            self._debug_heartbeat_timer.setInterval(3000)
+            self._debug_heartbeat_timer.timeout.connect(
+                lambda: self._log_input_debug("heartbeat")
+            )
+            self._debug_heartbeat_timer.start()
+
     def configure_sam_params(self, min_area: int, overlap_iou: float):
         self._sam_min_area = max(1, int(min_area))
         self._sam_overlap_iou = max(0.0, min(1.0, float(overlap_iou)))
+
+    def _log_input_debug(self, context: str, event: Optional[QMouseEvent] = None):
+        """Log a full snapshot of Qt-level and internal mouse/interaction
+        state, for diagnosing input-freeze-style bugs (see
+        mbari-org/vars-feedback#317). Only called when debug_input_enabled().
+
+        Deliberately reads Qt's own global mouse-grab bookkeeping
+        (QWidget.mouseGrabber() / QApplication.mouseButtons()), not just our
+        own internal flags, since the leading theory for the freeze is that
+        Qt's grab state itself gets corrupted independent of what our code
+        thinks is happening.
+        """
+        try:
+            grabber = QWidget.mouseGrabber()
+            grabber_desc = (
+                "{}(id={})".format(type(grabber).__name__, id(grabber))
+                if grabber is not None
+                else "None"
+            )
+            event_desc = ""
+            if event is not None:
+                event_desc = " button={} buttons={} pos={} modifiers={}".format(
+                    event.button(), event.buttons(), event.pos(), event.modifiers()
+                )
+            logger.debug(
+                "[input-debug] {}:{} qt_mouseButtons={} qt_mouseGrabber={} "
+                "underMouse={} panning={} pending_sam_accept={} "
+                "sam_hover_box={} sam_hover_inflight={} resize_type={} "
+                "pt_1={} selected_box_id={}",
+                context,
+                event_desc,
+                QApplication.mouseButtons(),
+                grabber_desc,
+                self.underMouse(),
+                getattr(self, "_panning", None),
+                self._pending_sam_right_click_accept is not None,
+                self._sam_hover_box is not None,
+                getattr(self, "_sam_hover_inflight", None),
+                getattr(self, "resize_type", None),
+                self.pt_1,
+                id(self.selected_box) if self.selected_box is not None else None,
+            )
+        except Exception:
+            # Diagnostics must never themselves be the cause of a problem.
+            logger.exception("[input-debug] logging failed in {}", context)
 
     def _m3_fetch_image(self, url: str):
         return self._require_m3_service().fetch_image_bytes(url)
@@ -634,6 +694,7 @@ class ImageView(QGraphicsView):
                 )
             self.reload_moment(preserve_sam_state=True)
         except Exception as exc:
+            logger.exception("accept_sam_candidate failed: {}", exc)
             QMessageBox.warning(self, "Box creation failed", str(exc))
         self.redraw()
 
@@ -1071,8 +1132,20 @@ class ImageView(QGraphicsView):
         self._sam_last_hover_point = pt
         self._sam_hover_inflight = True
         self._notify_sam_status("SAM point prompt query...")
+        if debug_input_enabled():
+            logger.debug(
+                "[input-debug] _maybe_update_hover_candidate: dispatching "
+                "query_point({}, {}), inflight=True",
+                pt.x(),
+                pt.y(),
+            )
 
         def _on_result(boxes):
+            if debug_input_enabled():
+                logger.debug(
+                    "[input-debug] SAM point query _on_result: {} box(es)",
+                    len(boxes) if boxes else 0,
+                )
             if not self._sam_assist_enabled:
                 return
             if not self._mouse_in_view:
@@ -1112,9 +1185,14 @@ class ImageView(QGraphicsView):
             self.redraw()
 
         def _on_error(err):
+            logger.error("SAM point prompt query failed: {}", err)
             self._notify_sam_status("SAM point prompt query failed")
 
         def _on_finished():
+            if debug_input_enabled():
+                logger.debug(
+                    "[input-debug] SAM point query _on_finished: inflight False"
+                )
             self._sam_hover_inflight = False
             if self.sam3_service is not None and self.sam3_service.available:
                 self._notify_sam_status(
@@ -1169,6 +1247,14 @@ class ImageView(QGraphicsView):
         )
         next_uuid = entry.imaged_moment.uuid
         preserve_same_image = bool(preserve_sam_state and current_uuid == next_uuid)
+        if debug_input_enabled():
+            logger.debug(
+                "[input-debug] load_moment:enter current_uuid={} next_uuid={} "
+                "preserve_same_image={}",
+                current_uuid,
+                next_uuid,
+                preserve_same_image,
+            )
 
         self.moment = entry
         if not preserve_same_image:
@@ -1272,6 +1358,8 @@ class ImageView(QGraphicsView):
             self._start_sam_candidates_for_concept(self._active_annotation_concept)
 
         self._ensure_video_data_loaded(moment)
+        if debug_input_enabled():
+            self._log_input_debug("load_moment:exit")
 
     def set_pixmap(self, pixmap: Optional[QPixmap]):
         """Set the source pixmap, resize the scene to it, and fit the view.
@@ -1760,6 +1848,9 @@ class ImageView(QGraphicsView):
                     to_concept=part_after,
                 )
             except ServiceError as exc:
+                logger.exception(
+                    "show_box_properties_dialog: modify_box failed: {}", exc
+                )
                 QMessageBox.warning(
                     self,
                     "Update failed",
@@ -1785,6 +1876,7 @@ class ImageView(QGraphicsView):
                 to_concept=box.part or "self",
             )
         except ServiceError as exc:
+            logger.exception("_on_box_geometry_committed: modify_box failed: {}", exc)
             QMessageBox.warning(
                 self,
                 "Update failed",
@@ -1832,6 +1924,7 @@ class ImageView(QGraphicsView):
                 try:
                     self.delete_box(box_item.source)
                 except Exception as exc:
+                    logger.exception("Context menu delete_box failed: {}", exc)
                     QMessageBox.warning(self, "Delete failed", str(exc))
 
     def delete_box(self, box: SourceBoundingBox):
@@ -1849,6 +1942,7 @@ class ImageView(QGraphicsView):
         try:
             self._m3_delete_box(box.association_uuid)  # Call deletion request
         except ServiceError as exc:
+            logger.exception("delete_box: delete_box service call failed: {}", exc)
             QMessageBox.warning(
                 self,
                 "Delete failed",
@@ -1879,6 +1973,7 @@ class ImageView(QGraphicsView):
                 try:
                     self._m3_delete_observation(observation.uuid)
                 except ServiceError as exc:
+                    logger.exception("delete_box: delete_observation failed: {}", exc)
                     QMessageBox.warning(
                         self,
                         "Delete failed",
@@ -1987,7 +2082,11 @@ class ImageView(QGraphicsView):
         dialog.setModal(True)
         dialog.adjustSize()
         center_window(dialog, self.window())
+        if debug_input_enabled():
+            self._log_input_debug("prompt_concept:before_dialog_exec")
         accepted = dialog.exec()
+        if debug_input_enabled():
+            self._log_input_debug("prompt_concept:after_dialog_exec")
         # Restore mouse-in-view state: the enter event from the dialog closing
         # may not be delivered until the next event loop iteration, so the
         # crosshair redraw that follows would otherwise run with a stale False.
@@ -2065,12 +2164,23 @@ class ImageView(QGraphicsView):
 
     def reload_moment(self, preserve_sam_state: bool = False):
         """Fully reload the current imaged moment entry."""
+        if debug_input_enabled():
+            logger.debug(
+                "[input-debug] reload_moment:enter preserve_sam_state={}",
+                preserve_sam_state,
+            )
         target_entry = self.moment
         image = target_entry.imaged_moment.cached_image
 
         def _on_done():
+            if debug_input_enabled():
+                logger.debug("[input-debug] reload_moment._on_done:enter")
             # Guard: ignore if the user navigated away before the reload finished.
             if self.moment is not target_entry:
+                if debug_input_enabled():
+                    logger.debug(
+                        "[input-debug] reload_moment._on_done: stale, moment changed away"
+                    )
                 return
             if image is not None:
                 target_entry.imaged_moment.cached_image = image
@@ -2078,14 +2188,22 @@ class ImageView(QGraphicsView):
                 target_entry,
                 preserve_sam_state=preserve_sam_state,
             )
+            if debug_input_enabled():
+                logger.debug("[input-debug] reload_moment._on_done:exit")
 
-        target_entry.treeWidget().load_imaged_moment_entry_async(
-            target_entry,
-            on_error=lambda err: QMessageBox.warning(
+        def _on_error(err):
+            logger.exception(
+                "reload_moment: load_imaged_moment_entry_async failed: {}", err
+            )
+            QMessageBox.warning(
                 self,
                 "Refresh failed",
                 "Could not reload imaged moment.\n\n{}".format(err),
-            ),
+            )
+
+        target_entry.treeWidget().load_imaged_moment_entry_async(
+            target_entry,
+            on_error=_on_error,
             on_finished=_on_done,
         )
 
@@ -2100,6 +2218,13 @@ class ImageView(QGraphicsView):
         Args:
             box: Source bounding box.
         """
+        if debug_input_enabled():
+            logger.debug(
+                "[input-debug] handle_new_box:enter observation_uuid={} "
+                "active_annotation_concept={}",
+                self.observation_uuid,
+                self._active_annotation_concept,
+            )
         uuid = self.observation_uuid
         created_new_observation = False
         if not uuid:  # Imaged moment selected
@@ -2139,6 +2264,14 @@ class ImageView(QGraphicsView):
             )
 
         box.association_uuid = response_json["uuid"]
+        if debug_input_enabled():
+            logger.debug(
+                "[input-debug] handle_new_box:exit created_new_observation={} "
+                "uuid={} refresh={}",
+                created_new_observation,
+                uuid,
+                refresh,
+            )
         if refresh:
             self.reload_moment(preserve_sam_state=preserve_sam_state)
 
@@ -2192,13 +2325,20 @@ class ImageView(QGraphicsView):
         return box_item.edge_at_scene_point(self.mapToScene(viewport_pos)) is not None
 
     def _accept_sam_hover_box(self, candidate: SourceBoundingBox):
+        if debug_input_enabled():
+            self._log_input_debug("_accept_sam_hover_box:enter")
         try:
             self.handle_new_box(candidate, preserve_sam_state=True)
         except Exception as exc:
+            logger.exception("_accept_sam_hover_box: handle_new_box failed: {}", exc)
             QMessageBox.warning(self, "Box creation failed", str(exc))
         self.redraw()
+        if debug_input_enabled():
+            self._log_input_debug("_accept_sam_hover_box:exit")
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        if debug_input_enabled():
+            self._log_input_debug("mousePressEvent:enter", event)
         if (
             event.button() == Qt.MouseButton.RightButton
             and self._sam_assist_enabled
@@ -2255,6 +2395,8 @@ class ImageView(QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if debug_input_enabled():
+            self._log_input_debug("mouseMoveEvent:enter", event)
         self._mouse_in_view = True
         ctrl_held = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
 
@@ -2338,6 +2480,8 @@ class ImageView(QGraphicsView):
         target.setSelected(True)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if debug_input_enabled():
+            self._log_input_debug("mouseReleaseEvent:enter", event)
         if (
             event.button() == Qt.MouseButton.RightButton
             and self._pending_sam_right_click_accept is not None
@@ -2345,6 +2489,11 @@ class ImageView(QGraphicsView):
             candidate = self._pending_sam_right_click_accept
             self._pending_sam_right_click_accept = None
             event.accept()
+            if debug_input_enabled():
+                logger.debug(
+                    "[input-debug] mouseReleaseEvent: scheduling deferred SAM "
+                    "accept via QTimer.singleShot(0, ...)"
+                )
             # The button-up for this click has now genuinely been processed
             # (we're inside its own release handler). Still defer one tick
             # so Qt fully finishes this event (grab/ungrab bookkeeping)
@@ -2390,6 +2539,10 @@ class ImageView(QGraphicsView):
                 try:
                     self.handle_new_box(new_src_box)
                 except Exception as exc:
+                    logger.exception(
+                        "mouseReleaseEvent: handle_new_box (drag-drawn box) failed: {}",
+                        exc,
+                    )
                     QMessageBox.warning(self, "Box creation failed", str(exc))
 
         self.pt_1 = None
@@ -2458,6 +2611,7 @@ class ImageView(QGraphicsView):
                     try:
                         self.delete_box(self.selected_box)
                     except Exception as exc:
+                        logger.exception("keyPressEvent: delete_box failed: {}", exc)
                         QMessageBox.warning(self, "Delete failed", str(exc))
             else:
                 super().keyPressEvent(event)

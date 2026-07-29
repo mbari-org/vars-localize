@@ -46,6 +46,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="Remove user-level Linux desktop entry and icons.",
     )
 
+    parser.add_argument(
+        "--debug-input",
+        action="store_true",
+        help=(
+            "Enable verbose mouse/dialog/SAM-async lifecycle diagnostics for "
+            "tracking down input-freeze-style bugs (implies DEBUG log level; "
+            "very noisy, logs on every mouse move)."
+        ),
+    )
+
     return parser
 
 
@@ -62,7 +72,7 @@ def main(argv: Optional[Sequence[str]] = None):
     if args.command == "uninstall-desktop":
         return uninstall_desktop_entry()
 
-    configure_logging()
+    configure_logging(debug_input=getattr(args, "debug_input", False))
     app = QApplication([sys.argv[0], *qt_args])
     app.setApplicationName("VARS Localize")
     app.setApplicationDisplayName("VARS Localize")

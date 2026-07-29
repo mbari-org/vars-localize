@@ -1584,36 +1584,47 @@ class ImageView(QGraphicsView):
         return pen
 
     def _ensure_overlay_items(self):
+        # All overlay items below are purely visual indicators, never meant
+        # to be interactive -- explicitly refuse mouse buttons on them so
+        # Qt's native event dispatch skips straight past them to whatever
+        # real box may be underneath (e.g. a SAM suggestion should never be
+        # able to "steal" a click meant for an existing box's resize handle
+        # it happens to overlap).
         if self._drag_rect_item is None:
             self._drag_rect_item = self.scene().addRect(
                 QRectF(), self._cosmetic_pen("accent_alt", 1)
             )
             self._drag_rect_item.setZValue(150)
             self._drag_rect_item.setVisible(False)
+            self._drag_rect_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         if self._sam_candidate_item is None:
             self._sam_candidate_item = self.scene().addRect(
                 QRectF(), self._cosmetic_pen("success", 2, Qt.PenStyle.DashLine)
             )
             self._sam_candidate_item.setZValue(200)
             self._sam_candidate_item.setVisible(False)
+            self._sam_candidate_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         if self._sam_hover_item is None:
             self._sam_hover_item = self.scene().addRect(
                 QRectF(), self._cosmetic_pen("warning", 2, Qt.PenStyle.DashLine)
             )
             self._sam_hover_item.setZValue(200)
             self._sam_hover_item.setVisible(False)
+            self._sam_hover_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         if self._crosshair_h_item is None:
             self._crosshair_h_item = self.scene().addLine(
                 QLineF(), self._cosmetic_pen("crosshairs", 1)
             )
             self._crosshair_h_item.setZValue(250)
             self._crosshair_h_item.setVisible(False)
+            self._crosshair_h_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         if self._crosshair_v_item is None:
             self._crosshair_v_item = self.scene().addLine(
                 QLineF(), self._cosmetic_pen("crosshairs", 1)
             )
             self._crosshair_v_item.setZValue(250)
             self._crosshair_v_item.setVisible(False)
+            self._crosshair_v_item.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
 
     def _update_crosshair(self, scene_pos: Optional[QPointF]):
         """Show red crosshairs through the cursor while Ctrl (draw-box mode) is held."""
@@ -2318,8 +2329,27 @@ class ImageView(QGraphicsView):
             return item.parentItem()
         return None
 
+    def _box_item_at(self, viewport_pos: QPoint) -> Optional[BoundingBoxItem]:
+        """Find the topmost real box at a point, ignoring non-interactive
+        overlays (SAM candidate/hover suggestions, the drag rect) drawn
+        above it in z-order.
+
+        self.itemAt() only ever returns the single topmost item, so a SAM
+        suggestion rect sitting above a real box's resize handle would
+        otherwise "steal" the hit-test and make the box underneath
+        unresizable while a suggestion happens to overlap it.
+        """
+        if not self._has_scene():
+            return None
+        scene_pos = self.mapToScene(viewport_pos)
+        for item in self.scene().items(scene_pos):
+            box_item = self._resolve_box_item(item)
+            if box_item is not None:
+                return box_item
+        return None
+
     def _is_resize_handle_at(self, viewport_pos: QPoint) -> bool:
-        box_item = self._resolve_box_item(self.itemAt(viewport_pos))
+        box_item = self._box_item_at(viewport_pos)
         if box_item is None:
             return False
         return box_item.edge_at_scene_point(self.mapToScene(viewport_pos)) is not None
@@ -2553,12 +2583,7 @@ class ImageView(QGraphicsView):
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         self.pt_1 = None
         self.pt_2 = None
-        item = self.itemAt(event.pos())
-        box_item = item if isinstance(item, BoundingBoxItem) else None
-        if box_item is None and item is not None:
-            parent = item.parentItem()
-            if isinstance(parent, BoundingBoxItem):
-                box_item = parent
+        box_item = self._box_item_at(event.pos())
         if box_item is not None and box_item.editable:
             self.show_box_properties_dialog(box_item)
             event.accept()

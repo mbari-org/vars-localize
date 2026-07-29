@@ -886,3 +886,62 @@ def test_right_click_sam_accept_defers_handle_new_box_to_release(monkeypatch):
 
     scheduled[0]()
     assert calls == [hover_box]
+
+
+def test_box_item_at_skips_non_box_overlays_to_find_real_box():
+    """A SAM candidate/hover suggestion overlay sits above real boxes in
+    z-order (so it's always visible), but it must never "steal" a click
+    meant for a real box's resize handle it happens to overlap -- otherwise
+    that handle becomes undraggable (falls through to panning instead)
+    whenever a suggestion happens to be drawn on top of it.
+
+    _box_item_at must walk scene().items(pos) (which returns every item at
+    that point, front-to-back) rather than relying on itemAt() (which only
+    ever returns the single topmost item), skipping non-BoundingBoxItem
+    overlays to find the real box underneath.
+
+    Uses a real (but scene-less) BoundingBoxItem plus a lightweight fake
+    scene/view, rather than a real QGraphicsScene/QGraphicsView -- a second
+    real Qt view in the same test process is unreliable in this environment
+    (see test_mouse_move_without_state_change_skips_full_redraw, the one
+    real-ImageView test in this file).
+    """
+    from vars_localize.ui.BoundingBox import BoundingBoxItem, SourceBoundingBox
+    from vars_localize.ui.ImageView import ImageView
+
+    box_source = SourceBoundingBox(
+        {
+            "x": 100,
+            "y": 100,
+            "width": 300,
+            "height": 220,
+            "image_reference_uuid": "img-1",
+        },
+        "fish",
+        observation_uuid="obs-1",
+        association_uuid="a1",
+        part="self",
+    )
+    box_item = BoundingBoxItem(box_source, editable=True)
+
+    # Stand-in for a non-interactive overlay (a real QGraphicsRectItem, like
+    # the SAM suggestion rect, has a working parentItem() that returns None
+    # for a top-level item).
+    overlay_item = SimpleNamespace(parentItem=lambda: None)
+
+    class FakeScene:
+        def items(self, _pos):
+            # Front-to-back order: the overlay is on top of the real box.
+            return [overlay_item, box_item]
+
+    view = ImageView.__new__(ImageView)
+    view.scene = lambda: FakeScene()
+    view.mapToScene = lambda viewport_pos: viewport_pos  # identity for this test
+
+    resolved = view._box_item_at(viewport_pos="anything")
+    assert resolved is box_item
+
+    # And the full resize-handle check sees past the overlay too, at an
+    # actual corner of the real box.
+    corner_scene_pos = box_item.mapToScene(box_item.rect().bottomRight())
+    assert view._is_resize_handle_at(viewport_pos=corner_scene_pos) is True

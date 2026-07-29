@@ -411,16 +411,18 @@ class BoundingBoxItem(QGraphicsObject):
     ) -> None:
         """Paint the item within the scene."""
         if not self.editable:
-            pen = QPen(self.color, 1)
+            # Non-interactive (video-frame) boxes still bolden when their
+            # observation is highlighted, matching editable boxes below.
+            pen = QPen(self.color, 3 if self.highlighted else 1)
         else:
             pen = QPen(self.color.lighter(), 1)
             if self._hovered and not self.isSelected():
                 pen.setWidth(2)
                 pen.setStyle(Qt.PenStyle.DashLine)
             if self.highlighted:
-                pen.setWidth(2)
+                pen.setWidth(3)
             if self.isSelected():
-                pen = QPen(QColor(PALETTE["accent"]), 2)
+                pen = QPen(QColor(PALETTE["accent"]), 3)
 
         # Cosmetic: line width stays constant in screen pixels regardless of zoom.
         pen.setCosmetic(True)

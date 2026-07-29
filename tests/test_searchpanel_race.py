@@ -52,3 +52,27 @@ def test_load_page_ignores_stale_results(monkeypatch):
 
     assert loaded == [["fresh"]]
     assert panel._loading_ops == 0
+
+
+def test_observation_dialog_concepts_uses_catalog_when_search_mode_is_video_sequence():
+    from vars_localize.ui.SearchPanel import SearchPanel
+
+    panel = SearchPanel.__new__(SearchPanel)
+    panel._state = SimpleNamespace(concepts=["Actiniaria", "Cnidaria"])
+    panel.search_mode = "video_sequence_name"
+    panel.search_bar = SimpleNamespace(
+        get_concepts=lambda: ["CIC 2023 ArcticRays Survey"]
+    )
+
+    assert panel.get_concept_catalog() == ["Actiniaria", "Cnidaria"]
+
+
+def test_observation_dialog_concepts_falls_back_to_search_bar_when_catalog_empty():
+    from vars_localize.ui.SearchPanel import SearchPanel
+
+    panel = SearchPanel.__new__(SearchPanel)
+    panel._state = SimpleNamespace(concepts=[])
+    panel.search_mode = "concept"
+    panel.search_bar = SimpleNamespace(get_concepts=lambda: ["Actiniaria"])
+
+    assert panel.get_concept_catalog() == ["Actiniaria"]

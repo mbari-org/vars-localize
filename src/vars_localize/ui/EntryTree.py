@@ -1034,9 +1034,7 @@ class ImagedMomentTree(QWidget):
         concept_searchbar = ConceptSearchbar(dialog)
         try:
             root_any = cast(Any, root)
-            concept_searchbar.set_concepts(
-                root_any.search_panel.search_bar.get_concepts()
-            )
+            concept_searchbar.set_concepts(root_any.search_panel.get_concept_catalog())
         except Exception:
             concept_searchbar.set_concepts([])
 

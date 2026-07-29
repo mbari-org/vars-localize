@@ -629,6 +629,20 @@ class SearchPanel(QDockWidget):
             observation_uuid=observation_uuid,
         )
 
+    def get_concept_catalog(self):
+        """Return knowledge base concept suggestions for concept-picker dialogs.
+
+        Falls back to the search bar's current suggestions only when the concept
+        catalog hasn't loaded, since the search bar's suggestions vary with the
+        active search mode (e.g. video sequence names) and aren't concepts.
+        """
+        concepts = list(self._state.concepts or [])
+        if concepts:
+            return concepts
+        if self.search_mode == "concept":
+            return self.search_bar.get_concepts()
+        return []
+
     def show_popup(self, item: EntryTreeItem, col: int):
         if item is None or not item.is_observation:
             return
@@ -696,7 +710,7 @@ class SearchPanel(QDockWidget):
         dialog_layout.addWidget(button_box)
 
         concept_field = ConceptSearchbar()
-        concept_field.set_concepts(self.search_bar.get_concepts())
+        concept_field.set_concepts(self.get_concept_catalog())
         concept_field.setText(observation.concept)
         concept_field.setDisabled(not editable and not admin_mode)
         concept_field.textChanged.connect(lambda _: set_dialog_saveable(False))

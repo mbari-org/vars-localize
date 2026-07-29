@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Callable, List, Optional, Any, cast
 
-from PyQt6.QtCore import Qt, QPoint, QPointF, QRectF, QLineF
+from PyQt6.QtCore import Qt, QPoint, QPointF, QRectF, QLineF, QTimer
 from PyQt6.QtGui import (
     QEnterEvent,
     QImage,
@@ -2190,22 +2190,33 @@ class ImageView(QGraphicsView):
             return False
         return box_item.edge_at_scene_point(self.mapToScene(viewport_pos)) is not None
 
+    def _accept_sam_hover_box(self, candidate: SourceBoundingBox):
+        try:
+            self.handle_new_box(candidate, preserve_sam_state=True)
+        except Exception as exc:
+            QMessageBox.warning(self, "Box creation failed", str(exc))
+        self.redraw()
+
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if (
             event.button() == Qt.MouseButton.RightButton
             and self._sam_assist_enabled
             and self._sam_hover_box is not None
         ):
-            try:
-                self.handle_new_box(
-                    self._sam_hover_box,
-                    preserve_sam_state=True,
-                )
-                self._sam_hover_box = None
-            except Exception as exc:
-                QMessageBox.warning(self, "Box creation failed", str(exc))
-            self.redraw()
+            candidate = self._sam_hover_box
+            self._sam_hover_box = None
             event.accept()
+            # Defer: handle_new_box() may open a modal "Specify a concept"
+            # dialog (prompt_concept()) when no concept/observation is active
+            # (e.g. "All concepts" selected). Opening a modal dialog
+            # synchronously from inside mousePressEvent -- while this mouse
+            # button is still logically down -- can leave the view's mouse
+            # grab in a broken state on some platforms (observed on macOS,
+            # not reproducible on Linux), so the canvas stops receiving any
+            # further mouse events afterward. Running it on the next
+            # event-loop iteration lets Qt finish this press/release cycle
+            # cleanly first.
+            QTimer.singleShot(0, lambda: self._accept_sam_hover_box(candidate))
             return
 
         ctrl_held = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)

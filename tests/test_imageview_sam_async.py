@@ -816,3 +816,53 @@ def test_find_similar_from_exemplars_uses_active_concept():
     view.find_similar_from_exemplars()
 
     assert calls == ["fish"]
+
+
+def test_right_click_sam_accept_defers_handle_new_box(monkeypatch):
+    """Regression test for mbari-org/vars-feedback#317.
+
+    handle_new_box() can open a modal "Specify a concept" dialog (when no
+    concept/observation is active, e.g. "All concepts" selected). Opening
+    that dialog synchronously from inside mousePressEvent -- while the
+    right mouse button triggering it is still logically down -- corrupts
+    the view's mouse grab on some platforms (observed on macOS), freezing
+    the canvas to further mouse input. The accept must be deferred to the
+    next event-loop iteration instead of running inline.
+    """
+    from PyQt6.QtCore import QEvent, QPointF, Qt, QTimer
+    from PyQt6.QtGui import QMouseEvent
+    from vars_localize.ui.ImageView import ImageView
+
+    scheduled = []
+    monkeypatch.setattr(
+        QTimer, "singleShot", staticmethod(lambda msec, cb: scheduled.append(cb))
+    )
+
+    view = ImageView.__new__(ImageView)
+    view._sam_assist_enabled = True
+    hover_box = object()
+    view._sam_hover_box = hover_box
+    view.redraw = lambda: None
+    calls = []
+    view.handle_new_box = lambda box, preserve_sam_state=False: calls.append(box)
+
+    event = QMouseEvent(
+        QEvent.Type.MouseButtonPress,
+        QPointF(0, 0),
+        QPointF(0, 0),
+        QPointF(0, 0),
+        Qt.MouseButton.RightButton,
+        Qt.MouseButton.RightButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+
+    view.mousePressEvent(event)
+
+    assert view._sam_hover_box is None
+    assert (
+        calls == []
+    ), "handle_new_box must not run synchronously inside mousePressEvent"
+    assert len(scheduled) == 1
+
+    scheduled[0]()
+    assert calls == [hover_box]

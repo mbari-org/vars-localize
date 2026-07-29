@@ -818,16 +818,20 @@ def test_find_similar_from_exemplars_uses_active_concept():
     assert calls == ["fish"]
 
 
-def test_right_click_sam_accept_defers_handle_new_box(monkeypatch):
+def test_right_click_sam_accept_defers_handle_new_box_to_release(monkeypatch):
     """Regression test for mbari-org/vars-feedback#317.
 
     handle_new_box() can open a modal "Specify a concept" dialog (when no
     concept/observation is active, e.g. "All concepts" selected). Opening
-    that dialog synchronously from inside mousePressEvent -- while the
-    right mouse button triggering it is still logically down -- corrupts
-    the view's mouse grab on some platforms (observed on macOS), freezing
-    the canvas to further mouse input. The accept must be deferred to the
-    next event-loop iteration instead of running inline.
+    that dialog while the right mouse button is still physically down
+    corrupts the view's mouse grab on some platforms (observed on macOS),
+    freezing the canvas to further mouse input.
+
+    A same-tick QTimer.singleShot(0, ...) fired from mousePressEvent isn't
+    enough: it runs microseconds later, long before the physical button-up.
+    The accept must wait for the matching mouseReleaseEvent (which only
+    fires once Qt has actually processed the button-up) before running,
+    with a further deferral there as an extra safety margin.
     """
     from PyQt6.QtCore import QEvent, QPointF, Qt, QTimer
     from PyQt6.QtGui import QMouseEvent
@@ -840,13 +844,14 @@ def test_right_click_sam_accept_defers_handle_new_box(monkeypatch):
 
     view = ImageView.__new__(ImageView)
     view._sam_assist_enabled = True
+    view._panning = False
     hover_box = object()
     view._sam_hover_box = hover_box
     view.redraw = lambda: None
     calls = []
     view.handle_new_box = lambda box, preserve_sam_state=False: calls.append(box)
 
-    event = QMouseEvent(
+    press = QMouseEvent(
         QEvent.Type.MouseButtonPress,
         QPointF(0, 0),
         QPointF(0, 0),
@@ -855,13 +860,28 @@ def test_right_click_sam_accept_defers_handle_new_box(monkeypatch):
         Qt.MouseButton.RightButton,
         Qt.KeyboardModifier.NoModifier,
     )
-
-    view.mousePressEvent(event)
+    view.mousePressEvent(press)
 
     assert view._sam_hover_box is None
+    assert view._pending_sam_right_click_accept is hover_box
+    assert calls == [], "handle_new_box must not run at press time"
+    assert scheduled == [], "must not schedule anything before the button is released"
+
+    release = QMouseEvent(
+        QEvent.Type.MouseButtonRelease,
+        QPointF(0, 0),
+        QPointF(0, 0),
+        QPointF(0, 0),
+        Qt.MouseButton.RightButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    view.mouseReleaseEvent(release)
+
+    assert view._pending_sam_right_click_accept is None
     assert (
         calls == []
-    ), "handle_new_box must not run synchronously inside mousePressEvent"
+    ), "handle_new_box must not run synchronously inside mouseReleaseEvent either"
     assert len(scheduled) == 1
 
     scheduled[0]()

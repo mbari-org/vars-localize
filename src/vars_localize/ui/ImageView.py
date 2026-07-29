@@ -200,6 +200,7 @@ class ImageView(QGraphicsView):
         self._pan_start_pos: Optional[QPoint] = None
         self._pan_start_scroll: Optional[tuple] = None
         self._current_cursor_shape: Optional[Qt.CursorShape] = None
+        self._pending_sam_right_click_accept: Optional[SourceBoundingBox] = None
 
         # Click-to-select state: a click (no drag) on overlapping boxes
         # cycles through them on repeated clicks at the same spot.
@@ -2203,20 +2204,20 @@ class ImageView(QGraphicsView):
             and self._sam_assist_enabled
             and self._sam_hover_box is not None
         ):
-            candidate = self._sam_hover_box
+            # handle_new_box() may open a modal "Specify a concept" dialog
+            # (prompt_concept()) when no concept/observation is active (e.g.
+            # "All concepts" selected). Opening a modal dialog while this
+            # mouse button is still physically down -- which it still is
+            # here, in the press handler -- can leave the view's mouse grab
+            # in a broken state on some platforms (observed on macOS). A
+            # same-tick QTimer.singleShot(0, ...) fires within microseconds,
+            # long before the physical button-up, so it does NOT actually
+            # wait for the release -- defer the accept to the matching
+            # mouseReleaseEvent instead, so Qt has genuinely finished
+            # processing the button-up first. See mbari-org/vars-feedback#317.
+            self._pending_sam_right_click_accept = self._sam_hover_box
             self._sam_hover_box = None
             event.accept()
-            # Defer: handle_new_box() may open a modal "Specify a concept"
-            # dialog (prompt_concept()) when no concept/observation is active
-            # (e.g. "All concepts" selected). Opening a modal dialog
-            # synchronously from inside mousePressEvent -- while this mouse
-            # button is still logically down -- can leave the view's mouse
-            # grab in a broken state on some platforms (observed on macOS,
-            # not reproducible on Linux), so the canvas stops receiving any
-            # further mouse events afterward. Running it on the next
-            # event-loop iteration lets Qt finish this press/release cycle
-            # cleanly first.
-            QTimer.singleShot(0, lambda: self._accept_sam_hover_box(candidate))
             return
 
         ctrl_held = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
@@ -2337,6 +2338,20 @@ class ImageView(QGraphicsView):
         target.setSelected(True)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if (
+            event.button() == Qt.MouseButton.RightButton
+            and self._pending_sam_right_click_accept is not None
+        ):
+            candidate = self._pending_sam_right_click_accept
+            self._pending_sam_right_click_accept = None
+            event.accept()
+            # The button-up for this click has now genuinely been processed
+            # (we're inside its own release handler). Still defer one tick
+            # so Qt fully finishes this event (grab/ungrab bookkeeping)
+            # before the "Specify a concept" dialog can possibly open.
+            QTimer.singleShot(0, lambda: self._accept_sam_hover_box(candidate))
+            return
+
         if self._panning:
             press_pos = self._pan_start_pos
             self._panning = False

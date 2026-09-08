@@ -25,6 +25,7 @@ class AppSettingsSnapshot:
     sam3_image_size: int
     sam3_min_area: int
     sam3_overlap_iou: float
+    sam_autozoom_enabled: bool
 
 
 class AppSettings:
@@ -48,6 +49,7 @@ class AppSettings:
     KEY_SAM3_IMAGE_SIZE = "ai/sam3_image_size"
     KEY_SAM3_MIN_AREA = "ai/sam3_min_area"
     KEY_SAM3_OVERLAP_IOU = "ai/sam3_overlap_iou"
+    KEY_SAM_AUTOZOOM_ENABLED = "ai/sam_autozoom_enabled"
 
     DEFAULT_CONNECTION_TIMEOUT = 3
     DEFAULT_SEARCH_PAGE_SIZE = 25
@@ -64,6 +66,7 @@ class AppSettings:
     DEFAULT_SAM3_IMAGE_SIZE = 644
     DEFAULT_SAM3_MIN_AREA = 100
     DEFAULT_SAM3_OVERLAP_IOU = 0.2
+    DEFAULT_SAM_AUTOZOOM_ENABLED = True
 
     def __init__(self):
         self._settings = QSettings(self.ORG, self.APP)
@@ -84,6 +87,7 @@ class AppSettings:
             sam3_image_size=self.sam3_image_size,
             sam3_min_area=self.sam3_min_area,
             sam3_overlap_iou=self.sam3_overlap_iou,
+            sam_autozoom_enabled=self.sam_autozoom_enabled,
         )
 
     @property
@@ -302,3 +306,17 @@ class AppSettings:
     def sam3_overlap_iou(self, value: float):
         bounded = max(0.0, min(1.0, float(value)))
         self._settings.setValue(self.KEY_SAM3_OVERLAP_IOU, bounded)
+
+    @property
+    def sam_autozoom_enabled(self) -> bool:
+        return bool(
+            self._settings.value(
+                self.KEY_SAM_AUTOZOOM_ENABLED,
+                self.DEFAULT_SAM_AUTOZOOM_ENABLED,
+                type=bool,
+            )
+        )
+
+    @sam_autozoom_enabled.setter
+    def sam_autozoom_enabled(self, value: bool):
+        self._settings.setValue(self.KEY_SAM_AUTOZOOM_ENABLED, bool(value))

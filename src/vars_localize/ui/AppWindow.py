@@ -87,7 +87,7 @@ class AppWindow(QMainWindow):
         )
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.search_panel)
 
-        self.display_panel = DisplayPanel(parent=self)
+        self.display_panel = DisplayPanel(parent=self, app_settings=self._settings)
         container_layout.addWidget(self.display_panel)
 
         self.setCentralWidget(self.central_container)

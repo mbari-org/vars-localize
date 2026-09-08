@@ -2,10 +2,13 @@
 Container widget used do display images + localizations and process input.
 """
 
+from typing import Optional
+
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QWidget, QVBoxLayout
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton
+from PyQt6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QPushButton
 
+from vars_localize.state import AppSettings
 from vars_localize.ui.ImageView import ImageView
 from vars_localize.ui.EntryTree import EntryTreeItem
 
@@ -26,8 +29,10 @@ class _HoverButton(QPushButton):
 
 
 class DisplayPanel(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, app_settings: Optional[AppSettings] = None):
         super(DisplayPanel, self).__init__(parent)
+
+        self._app_settings = app_settings
 
         self.setLayout(QVBoxLayout())
 
@@ -63,10 +68,24 @@ class DisplayPanel(QWidget):
         self.sam_find_similar.clicked.connect(self._find_similar)
         self.sam_find_similar.setEnabled(False)
 
+        self.sam_autozoom = QCheckBox("Auto-zoom")
+        self.sam_autozoom.setToolTip(
+            "Automatically zoom to the current SAM candidate while hovering "
+            "Accept/Reject. Turn off to keep the full image in view while "
+            "rolling through candidates."
+        )
+        self.sam_autozoom.setChecked(
+            self._app_settings.sam_autozoom_enabled
+            if self._app_settings is not None
+            else AppSettings.DEFAULT_SAM_AUTOZOOM_ENABLED
+        )
+        self.sam_autozoom.toggled.connect(self._on_autozoom_toggled)
+
         self.sam_controls.layout().addWidget(self.sam_label)
         self.sam_controls.layout().addWidget(self.sam_accept)
         self.sam_controls.layout().addWidget(self.sam_reject)
         self.sam_controls.layout().addWidget(self.sam_find_similar)
+        self.sam_controls.layout().addWidget(self.sam_autozoom)
         self.sam_controls.layout().addStretch(1)
 
         self.image_view = ImageView(parent=self)
@@ -98,17 +117,26 @@ class DisplayPanel(QWidget):
         self.image_view.accept_sam_candidate()
         # The mouse typically doesn't leave the button on click, so re-snap
         # the preview to whatever candidate is now current.
-        self.image_view.preview_focus_on_sam_candidate()
+        if self.sam_autozoom.isChecked():
+            self.image_view.preview_focus_on_sam_candidate()
 
     def _reject_sam_candidate(self):
         self.image_view.reject_sam_candidate()
-        self.image_view.preview_focus_on_sam_candidate()
+        if self.sam_autozoom.isChecked():
+            self.image_view.preview_focus_on_sam_candidate()
 
     def _preview_sam_candidate(self):
-        self.image_view.preview_focus_on_sam_candidate()
+        if self.sam_autozoom.isChecked():
+            self.image_view.preview_focus_on_sam_candidate()
 
     def _clear_sam_candidate_preview(self):
         self.image_view.clear_focus_preview()
+
+    def _on_autozoom_toggled(self, checked: bool):
+        if self._app_settings is not None:
+            self._app_settings.sam_autozoom_enabled = checked
+        if not checked:
+            self.image_view.clear_focus_preview()
 
     def _find_similar(self):
         self.image_view.find_similar_from_exemplars()

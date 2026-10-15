@@ -1049,15 +1049,15 @@ class ImagedMomentTree(QWidget):
         button_box.rejected.connect(dialog.reject)
         concept_to_set = None
 
-        def on_concept_update(concept: str):
+        def on_concept_update(text: str):
             nonlocal concept_to_set
-            valid = concept in concept_searchbar.get_concepts()
+            # Accept typed or inline-completed text, not just popup picks.
+            concept_to_set = concept_searchbar.find_concept(text) or None
             if ok_button is not None:
-                ok_button.setEnabled(valid)
-            if valid:
-                concept_to_set = concept
+                ok_button.setEnabled(concept_to_set is not None)
 
         concept_searchbar.set_callback(on_concept_update)
+        concept_searchbar.textChanged.connect(on_concept_update)
         dialog_layout.addWidget(button_box)
         dialog.setLayout(dialog_layout)
         result = dialog.exec()

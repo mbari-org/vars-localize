@@ -534,12 +534,8 @@ class SearchPanel(QDockWidget):
     def load_concept(self, concept):
         concept = (concept or "").strip()
         # Case-insensitive lookup so typed text matches regardless of capitalisation.
-        concept_lower = concept.lower()
-        matched = next(
-            (c for c in self.search_bar.get_concepts() if c.lower() == concept_lower),
-            None,
-        )
-        if matched is None:
+        matched = self.search_bar.find_concept(concept)
+        if not matched:
             QMessageBox.warning(
                 self, "Invalid Concept", 'Concept "{}" is invalid.'.format(concept)
             )
@@ -713,7 +709,10 @@ class SearchPanel(QDockWidget):
         concept_field.set_concepts(self.get_concept_catalog())
         concept_field.setText(observation.concept)
         concept_field.setDisabled(not editable and not admin_mode)
-        concept_field.textChanged.connect(lambda _: set_dialog_saveable(False))
+        # Saveable once the text is a known concept (typed, completed, or picked).
+        concept_field.textChanged.connect(
+            lambda text: set_dialog_saveable(bool(concept_field.find_concept(text)))
+        )
         concept_field.set_callback(lambda _: set_dialog_saveable(True))
 
         concept_layout = cast(QHBoxLayout, concept_widget.layout())

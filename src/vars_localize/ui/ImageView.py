@@ -2062,28 +2062,20 @@ class ImageView(QGraphicsView):
         submit_button.setEnabled(False)
         submit_button.pressed.connect(dialog.accept)
 
-        concepts = search.get_concepts()
         concept_selected = ""
 
-        def _find_match(text: str) -> str:
-            """Return the correctly-cased concept for *text*, or empty string."""
-            t = text.strip().lower()
-            return next((c for c in concepts if c.lower() == t), "")
-
-        def on_activated(concept: str):
+        def on_concept_update(text: str):
+            # Accept typed or inline-completed text, not just popup picks.
             nonlocal concept_selected
-            concept_selected = str(concept or "").strip()
+            concept_selected = search.find_concept(text)
             submit_button.setEnabled(bool(concept_selected))
 
         def on_return_pressed():
-            nonlocal concept_selected
-            matched = _find_match(search.text())
-            if matched:
-                concept_selected = matched
+            if search.find_concept(search.text()):
                 dialog.accept()
 
-        search.textChanged.connect(lambda _: submit_button.setEnabled(False))
-        search.set_callback(on_activated)
+        search.textChanged.connect(on_concept_update)
+        search.set_callback(on_concept_update)
         search.returnPressed.connect(on_return_pressed)
         search.setFocus()
 

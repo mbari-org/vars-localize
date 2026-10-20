@@ -116,6 +116,7 @@ class ImagedMomentTree(QWidget):
     currentItemChanged = pyqtSignal(object, object)
     itemDoubleClicked = pyqtSignal(object, int)
     associationActivated = pyqtSignal(str, str)
+    associationDoubleClicked = pyqtSignal(str, str)
     annotationFocusChanged = pyqtSignal(object, object)
 
     def __init__(self, m3_service: M3Service, parent=None):
@@ -239,6 +240,9 @@ class ImagedMomentTree(QWidget):
         )
         self.associations_table.itemSelectionChanged.connect(
             self._on_association_selection_changed
+        )
+        self.associations_table.itemDoubleClicked.connect(
+            self._on_association_double_clicked
         )
 
         self._attach_context_copy_menu(self.moments_table)
@@ -766,20 +770,28 @@ class ImagedMomentTree(QWidget):
             observation_uuid = self._selected_observation.observation.uuid
         self.annotationFocusChanged.emit(self._active_concept_filter, observation_uuid)
 
-    def _on_association_selection_changed(self):
-        row = self.associations_table.currentRow()
+    def _box_association_uuids(self, row: int) -> Optional[tuple[str, str]]:
+        """Return (observation_uuid, association_uuid) for a box row, else None."""
         if row < 0:
-            return
-
+            return None
         payload = self._row_payload(self.associations_table, row)
-        if not isinstance(payload, dict):
-            return
+        if not isinstance(payload, dict) or not payload.get("is_box"):
+            return None
+        obs_uuid = str(payload.get("observation_uuid", ""))
+        assoc_uuid = str(payload.get("uuid", ""))
+        if not obs_uuid or not assoc_uuid:
+            return None
+        return obs_uuid, assoc_uuid
 
-        if bool(payload.get("is_box")):
-            obs_uuid = str(payload.get("observation_uuid", ""))
-            assoc_uuid = str(payload.get("uuid", ""))
-            if obs_uuid and assoc_uuid:
-                self.associationActivated.emit(obs_uuid, assoc_uuid)
+    def _on_association_selection_changed(self):
+        uuids = self._box_association_uuids(self.associations_table.currentRow())
+        if uuids is not None:
+            self.associationActivated.emit(*uuids)
+
+    def _on_association_double_clicked(self, table_item: QTableWidgetItem):
+        uuids = self._box_association_uuids(table_item.row())
+        if uuids is not None:
+            self.associationDoubleClicked.emit(*uuids)
 
     def _on_observation_double_clicked(self, table_item: QTableWidgetItem):
         row = table_item.row()

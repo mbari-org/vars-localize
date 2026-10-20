@@ -190,6 +190,9 @@ class SearchPanel(QDockWidget):
             lambda current, _: self._sync_video_button_state(current)
         )
         self.entry_tree.associationActivated.connect(self._on_association_activated)
+        self.entry_tree.associationDoubleClicked.connect(
+            self._on_association_double_clicked
+        )
         self.entry_tree.annotationFocusChanged.connect(
             self._on_annotation_focus_changed
         )
@@ -611,6 +614,17 @@ class SearchPanel(QDockWidget):
         root = cast(Any, self.parent())
         try:
             root.display_panel.image_view.focus_association_box(
+                observation_uuid, association_uuid
+            )
+        except LookupError as exc:
+            self._show_error(str(exc))
+
+    def _on_association_double_clicked(
+        self, observation_uuid: str, association_uuid: str
+    ):
+        root = cast(Any, self.parent())
+        try:
+            root.display_panel.image_view.edit_association_box(
                 observation_uuid, association_uuid
             )
         except LookupError as exc:

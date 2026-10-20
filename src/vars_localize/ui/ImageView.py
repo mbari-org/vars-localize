@@ -1761,7 +1761,7 @@ class ImageView(QGraphicsView):
 
     def focus_association_box(
         self, observation_uuid: str, association_uuid: str
-    ) -> None:
+    ) -> Optional[BoundingBoxItem]:
         if not self.observation_map:
             raise LookupError("No observations are loaded for the current image.")
 
@@ -1788,9 +1788,24 @@ class ImageView(QGraphicsView):
                         self._suppress_selection_signal = False
                 self._refresh_highlighting()
                 self.redraw()
-                return
+                return box_item
 
         raise LookupError("Could not find the selected association box.")
+
+    def edit_association_box(
+        self, observation_uuid: str, association_uuid: str
+    ) -> None:
+        """Open the properties dialog for a box by UUID.
+
+        Lets users edit or delete boxes that are hard to pick on the canvas
+        (e.g. corrupted or degenerate dimensions).
+        """
+        box_item = self.focus_association_box(observation_uuid, association_uuid)
+        if box_item is None:
+            raise LookupError("The selected box is not displayed in the image view.")
+        if not box_item.editable:
+            raise LookupError("The selected box is not editable.")
+        self.show_box_properties_dialog(box_item)
 
     def get_im_rel_point(self, pt) -> QPointF:
         """Convert a viewport-relative point to full-resolution image coordinates.
